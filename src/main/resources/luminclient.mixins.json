@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "package": "com.lumin.luminclient.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "HandledScreenMixin",
+    "MinecraftClientMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

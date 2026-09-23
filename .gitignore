@@ -1,0 +1,26 @@
+# Gradle
+.gradle/
+build/
+out/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.classpath
+.project
+.settings/
+bin/
+.vscode/
+
+# Fabric/loom run dir
+run/
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# LuminClient local config (never commit API keys if user adds one)
+config/luminclient-local.json
