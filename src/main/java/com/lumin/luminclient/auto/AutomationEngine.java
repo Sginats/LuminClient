@@ -2,6 +2,7 @@ package com.lumin.luminclient.auto;
 
 import com.lumin.luminclient.LuminClient;
 import com.lumin.luminclient.config.LuminConfig;
+import com.lumin.luminclient.core.Debug;
 import com.lumin.luminclient.flip.FlipEngine;
 import com.lumin.luminclient.flip.FlipOpportunity;
 import net.minecraft.client.MinecraftClient;
@@ -97,7 +98,8 @@ public class AutomationEngine implements FlipEngine.Listener {
 
         long now = System.currentTimeMillis();
         if (clock.isInBreak(now)) {
-            // In a mandatory break between sessions
+            long remaining = clock.breakRemainingMs(now);
+            Debug.log(Debug.Category.AUTO, "In mandatory break, " + (remaining / 1000) + "s remaining");
             return;
         }
         if (now < nextActionAtMs) {
@@ -107,14 +109,19 @@ public class AutomationEngine implements FlipEngine.Listener {
         FlipOpportunity next = pendingFlips.isEmpty() ? null : pendingFlips.remove(0);
         if (next == null) return;
 
+        Debug.log(Debug.Category.AUTO, "Executing flip: " + next.display + " type=" + next.type
+                + " buy=" + next.buyAt + " sell=" + next.sellAt);
+
         busy.set(true);
         try {
             executeFlip(next);
         } catch (Throwable t) {
             LuminClient.LOGGER.warn("Automation error", t);
+            Debug.log(Debug.Category.ERROR, "Automation error while flipping " + next.display, t);
         } finally {
-            // Schedule next action with human-like delay
-            nextActionAtMs = System.currentTimeMillis() + clock.nextActionDelayMs(System.currentTimeMillis());
+            long delay = clock.nextActionDelayMs(System.currentTimeMillis());
+            nextActionAtMs = System.currentTimeMillis() + delay;
+            Debug.log(Debug.Category.AUTO, "Next action in " + delay + "ms");
             busy.set(false);
         }
     }
@@ -127,17 +134,24 @@ public class AutomationEngine implements FlipEngine.Listener {
      */
     private void executeFlip(FlipOpportunity flip) {
         MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.player == null || mc.currentScreen == null) {
+        if (mc.player == null) {
+            Debug.log(Debug.Category.AUTO, "No player in world - not executing");
+            return;
+        }
+        if (mc.currentScreen == null) {
+            Debug.log(Debug.Category.GUI, "No screen open");
             say("[Lumin] Open the Bazaar or Auction House, then let me work.");
             return;
         }
-
         if (!(mc.currentScreen instanceof HandledScreen)) {
+            Debug.log(Debug.Category.GUI, "Current screen is not a HandledScreen: "
+                    + mc.currentScreen.getClass().getSimpleName());
             say("[Lumin] No inventory screen open.");
             return;
         }
 
         HandledScreen<?> screen = (HandledScreen<?>) mc.currentScreen;
+        Debug.log(Debug.Category.GUI, "Screen title: " + screen.getTitle().getString());
 
         switch (flip.type) {
             case BAZAAR_MARGIN:
@@ -153,9 +167,11 @@ public class AutomationEngine implements FlipEngine.Listener {
         // 1) Find the bazaar product slot by name
         Slot product = GuiAutomation.findSlotByName(screen, flip.display);
         if (product == null) {
+            Debug.log(Debug.Category.GUI, "Could not find bazaar item slot: " + flip.display);
             say("[Lumin] Could not find bazaar item: " + flip.display);
             return;
         }
+        Debug.log(Debug.Category.GUI, "Found product slot " + product.id + " for " + flip.display);
 
         // 2) Click it (human-paced)
         clickHumanlike(screen, product.id);
@@ -164,13 +180,17 @@ public class AutomationEngine implements FlipEngine.Listener {
         // 3) In the product view, find "Buy Instantly" / "Create Buy Order"
         Slot buy = GuiAutomation.findSlotByName(screen, "buy");
         if (buy != null) {
+            Debug.log(Debug.Category.GUI, "Found buy slot " + buy.id);
             clickHumanlike(screen, buy.id);
             sleep(clock.nextActionDelayMs(System.currentTimeMillis()));
+        } else {
+            Debug.log(Debug.Category.GUI, "No buy slot found in product view");
         }
 
         // 4) The price/amount entry is done via anvil/chat; Hypixel uses a sign GUI.
         //    We cannot type into the sign automatically without further mixins, so we
         //    stop here and let the human confirm the amount. This is the "assist" mode.
+        Debug.log(Debug.Category.AUTO, "Staged buy order for " + flip.display + " at " + flip.buyAt);
         say("[Lumin] Buy order staged for " + flip.display + " at " + flip.buyAt + " coins. Confirm amount to pay.");
     }
 
@@ -178,9 +198,11 @@ public class AutomationEngine implements FlipEngine.Listener {
         // 1) Find the AH item slot by name
         Slot item = GuiAutomation.findSlotByName(screen, flip.display);
         if (item == null) {
+            Debug.log(Debug.Category.GUI, "Could not find auction slot: " + flip.display);
             say("[Lumin] Could not find auction: " + flip.display);
             return;
         }
+        Debug.log(Debug.Category.GUI, "Found auction slot " + item.id + " for " + flip.display);
 
         // 2) Click it
         clickHumanlike(screen, item.id);
@@ -189,8 +211,12 @@ public class AutomationEngine implements FlipEngine.Listener {
         // 3) Click the "Buy" / confirm slot
         Slot buy = GuiAutomation.findSlotByName(screen, "buy");
         if (buy != null) {
+            Debug.log(Debug.Category.GUI, "Found confirm slot " + buy.id);
             clickHumanlike(screen, buy.id);
+            Debug.log(Debug.Category.AUTO, "Bought " + flip.display + " for " + flip.buyAt);
             say("[Lumin] Bought " + flip.display + " for " + flip.buyAt + " coins.");
+        } else {
+            Debug.log(Debug.Category.GUI, "No buy/confirm slot found in auction view");
         }
     }
 

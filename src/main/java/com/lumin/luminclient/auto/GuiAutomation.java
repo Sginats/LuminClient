@@ -1,5 +1,6 @@
 package com.lumin.luminclient.auto;
 
+import com.lumin.luminclient.core.Debug;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.screen.slot.Slot;
@@ -18,7 +19,11 @@ public final class GuiAutomation {
     /** Click a slot in the currently open handled screen. */
     public static void clickSlot(HandledScreen<?> screen, int slotId, int button, SlotActionType action) {
         MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.interactionManager == null || mc.player == null) return;
+        if (mc.interactionManager == null || mc.player == null) {
+            Debug.log(Debug.Category.ERROR, "clickSlot: interactionManager or player is null");
+            return;
+        }
+        Debug.log(Debug.Category.GUI, "Clicking slot " + slotId + " button=" + button + " action=" + action);
         mc.interactionManager.clickSlot(
                 screen.getScreenHandler().syncId,
                 slotId,
@@ -34,8 +39,13 @@ public final class GuiAutomation {
         for (Slot slot : screen.getScreenHandler().slots) {
             if (!slot.hasStack()) continue;
             String name = slot.getStack().getName().getString().toLowerCase();
-            if (name.contains(n)) return slot;
+            if (name.contains(n)) {
+                Debug.log(Debug.Category.GUI, "findSlotByName(\"" + needle + "\") -> slot " + slot.id
+                        + " name=\"" + slot.getStack().getName().getString() + "\"");
+                return slot;
+            }
         }
+        Debug.log(Debug.Category.GUI, "findSlotByName(\"" + needle + "\") -> not found");
         return null;
     }
 
@@ -43,8 +53,22 @@ public final class GuiAutomation {
     public static Slot findSlotByExactName(HandledScreen<?> screen, String name) {
         for (Slot slot : screen.getScreenHandler().slots) {
             if (!slot.hasStack()) continue;
-            if (slot.getStack().getName().getString().equalsIgnoreCase(name)) return slot;
+            if (slot.getStack().getName().getString().equalsIgnoreCase(name)) {
+                Debug.log(Debug.Category.GUI, "findSlotByExactName(\"" + name + "\") -> slot " + slot.id);
+                return slot;
+            }
         }
+        Debug.log(Debug.Category.GUI, "findSlotByExactName(\"" + name + "\") -> not found");
         return null;
+    }
+
+    /** Dump all non-empty slots in the current screen to the debug log (for troubleshooting). */
+    public static void dumpSlots(HandledScreen<?> screen) {
+        if (!Debug.isEnabled()) return;
+        Debug.log(Debug.Category.GUI, "=== Slot dump (" + screen.getScreenHandler().slots.size() + " slots) ===");
+        for (Slot slot : screen.getScreenHandler().slots) {
+            if (!slot.hasStack()) continue;
+            Debug.log(Debug.Category.GUI, "  slot " + slot.id + ": " + slot.getStack().getName().getString());
+        }
     }
 }

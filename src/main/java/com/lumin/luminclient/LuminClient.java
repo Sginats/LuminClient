@@ -2,6 +2,8 @@ package com.lumin.luminclient;
 
 import com.lumin.luminclient.auto.AutomationEngine;
 import com.lumin.luminclient.config.LuminConfig;
+import com.lumin.luminclient.core.ChatCommandHandler;
+import com.lumin.luminclient.core.Debug;
 import com.lumin.luminclient.core.Keybinds;
 import com.lumin.luminclient.core.LuminCommand;
 import com.lumin.luminclient.flip.FlipEngine;
@@ -37,6 +39,8 @@ public class LuminClient implements ClientModInitializer {
 
         config = new LuminConfig();
         config.load();
+        Debug.init(config);
+        Debug.log(Debug.Category.CONFIG, "Config loaded. debugMode=" + config.debugMode + " debugToChat=" + config.debugToChat);
 
         flipEngine = new FlipEngine(config);
         guiManager = new GuiManager(config, flipEngine);
@@ -44,6 +48,7 @@ public class LuminClient implements ClientModInitializer {
 
         Keybinds.register(config, guiManager, automationEngine);
         LuminCommand.register(config, flipEngine, guiManager, automationEngine);
+        ChatCommandHandler.register(config, flipEngine, guiManager, automationEngine);
         Notifier.register(config, flipEngine);
 
         flipEngine.start();

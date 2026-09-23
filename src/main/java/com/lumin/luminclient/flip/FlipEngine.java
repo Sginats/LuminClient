@@ -4,6 +4,7 @@ import com.lumin.luminclient.LuminClient;
 import com.lumin.luminclient.api.HypixelApi;
 import com.lumin.luminclient.api.Models;
 import com.lumin.luminclient.config.LuminConfig;
+import com.lumin.luminclient.core.Debug;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -74,30 +75,43 @@ public class FlipEngine {
     }
 
     private void scanOnceSafe() {
+        long startNs = System.nanoTime();
         try {
+            Debug.log(Debug.Category.SCAN, "Starting market scan (bazaar=" + config.enableBazaarMarginFlips
+                    + ", binsnipe=" + config.enableBinSnipeFlips + ")");
             List<FlipOpportunity> flips = new ArrayList<FlipOpportunity>();
 
             if (config.enableBazaarMarginFlips) {
                 Models.BazaarSnapshot snapshot = Models.parseBazaar(api.getBazaar());
-                flips.addAll(bazaarStrategy.findFlips(snapshot, config));
+                Debug.log(Debug.Category.SCAN, "Bazaar snapshot: " + snapshot.products.size() + " products");
+                List<FlipOpportunity> bz = bazaarStrategy.findFlips(snapshot, config);
+                Debug.log(Debug.Category.SCAN, "Bazaar margin flips found: " + bz.size());
+                flips.addAll(bz);
             }
 
             if (config.enableBinSnipeFlips) {
-                flips.addAll(binStrategy.findFlips(api, config));
+                List<FlipOpportunity> bs = binStrategy.findFlips(api, config);
+                Debug.log(Debug.Category.SCAN, "BIN snipe flips found: " + bs.size());
+                flips.addAll(bs);
             }
 
             latestFlips.clear();
             latestFlips.addAll(flips);
+
+            long elapsedMs = (System.nanoTime() - startNs) / 1_000_000L;
+            Debug.log(Debug.Category.SCAN, "Scan complete in " + elapsedMs + "ms, total flips=" + flips.size());
 
             for (Listener l : listeners) {
                 try {
                     l.onNewFlips(Collections.unmodifiableList(flips));
                 } catch (Throwable t) {
                     LuminClient.LOGGER.warn("Flip listener error", t);
+                    Debug.log(Debug.Category.ERROR, "Flip listener error", t);
                 }
             }
         } catch (Exception e) {
             LuminClient.LOGGER.warn("Flip scan failed: {}", e.getMessage());
+            Debug.log(Debug.Category.ERROR, "Flip scan failed: " + e.getMessage(), e);
         }
     }
 }

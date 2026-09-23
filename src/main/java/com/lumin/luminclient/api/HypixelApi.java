@@ -2,6 +2,7 @@ package com.lumin.luminclient.api;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import com.lumin.luminclient.core.Debug;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -41,7 +42,9 @@ public class HypixelApi {
 
     private JsonObject get(String urlStr) throws IOException {
         HttpURLConnection conn = null;
+        long startNs = System.nanoTime();
         try {
+            Debug.log(Debug.Category.API, "GET " + urlStr);
             conn = (HttpURLConnection) new URL(urlStr).openConnection();
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(TIMEOUT_MS);
@@ -58,6 +61,7 @@ public class HypixelApi {
                     ? conn.getInputStream()
                     : conn.getErrorStream();
             if (raw == null) {
+                Debug.log(Debug.Category.ERROR, "HTTP " + code + " with empty body for " + urlStr);
                 throw new IOException("HTTP " + code + " with empty body");
             }
 
@@ -75,16 +79,22 @@ public class HypixelApi {
                 }
             }
 
+            long elapsedMs = (System.nanoTime() - startNs) / 1_000_000L;
+            Debug.log(Debug.Category.API, "HTTP " + code + " in " + elapsedMs + "ms, body=" + sb.length() + " bytes");
+
             JsonObject json = GSON.fromJson(sb.toString(), JsonObject.class);
             if (json == null) {
+                Debug.log(Debug.Category.ERROR, "Empty/invalid JSON (HTTP " + code + ") from " + urlStr);
                 throw new IOException("Empty/invalid JSON (HTTP " + code + ")");
             }
             if (code >= 400) {
                 String cause = json.has("cause") ? json.get("cause").getAsString() : "unknown";
+                Debug.log(Debug.Category.ERROR, "HTTP " + code + " from " + urlStr + ": " + cause);
                 throw new IOException("HTTP " + code + ": " + cause);
             }
             if (json.has("success") && !json.get("success").getAsBoolean()) {
                 String cause = json.has("cause") ? json.get("cause").getAsString() : "unknown";
+                Debug.log(Debug.Category.ERROR, "Hypixel API error from " + urlStr + ": " + cause);
                 throw new IOException("Hypixel API error: " + cause);
             }
             return json;

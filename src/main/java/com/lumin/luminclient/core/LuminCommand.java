@@ -1,10 +1,11 @@
-package com.lumin.luminclient.core;
+package com/lumin/luminclient.core;
 
-import com.lumin.luminclient.auto.AutomationEngine;
-import com.lumin.luminclient.config.LuminConfig;
-import com.lumin.luminclient.flip.FlipEngine;
-import com.lumin.luminclient.flip.FlipOpportunity;
-import com.lumin.luminclient.gui.GuiManager;
+import com/lumin/luminclient.auto.AutomationEngine;
+import com/lumin/luminclient.config.LuminConfig;
+import com/lumin/luminclient.core.Debug;
+import com/lumin/luminclient.flip.FlipEngine;
+import com/lumin/luminclient.flip.FlipOpportunity;
+import com/lumin/luminclient.gui.GuiManager;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
@@ -89,8 +90,48 @@ public final class LuminCommand {
                         }
                         return 1;
                     }))
+                .then(ClientCommandManager.literal("debug")
+                    .then(ClientCommandManager.literal("on")
+                        .executes(ctx -> {
+                            config.debugMode = true;
+                            config.save();
+                            ctx.getSource().sendFeedback(Text.literal("[Lumin] Debug mode ON. Log: " + Debug.getLogFilePath()));
+                            return 1;
+                        }))
+                    .then(ClientCommandManager.literal("off")
+                        .executes(ctx -> {
+                            config.debugMode = false;
+                            config.save();
+                            ctx.getSource().sendFeedback(Text.literal("[Lumin] Debug mode OFF"));
+                            return 1;
+                        }))
+                    .then(ClientCommandManager.literal("chat")
+                        .then(ClientCommandManager.argument("on", BoolArgumentType.bool())
+                            .executes(ctx -> {
+                                config.debugToChat = BoolArgumentType.getBool(ctx, "on");
+                                config.save();
+                                ctx.getSource().sendFeedback(Text.literal("[Lumin] debugToChat=" + config.debugToChat));
+                                return 1;
+                            })))
+                    .then(ClientCommandManager.literal("tail")
+                        .executes(ctx -> {
+                            String[] lines = Debug.tail(10);
+                            if (lines.length == 0) {
+                                ctx.getSource().sendFeedback(Text.literal("[Lumin] No debug lines yet."));
+                                return 0;
+                            }
+                            ctx.getSource().sendFeedback(Text.literal("[Lumin] Last " + lines.length + " debug lines:"));
+                            for (String l : lines) {
+                                ctx.getSource().sendFeedback(Text.literal("  " + l));
+                            }
+                            return 1;
+                        }))
+                    .executes(ctx -> {
+                        ctx.getSource().sendFeedback(Text.literal("[Lumin] /lumin debug on|off|chat <on|off>|tail"));
+                        return 1;
+                    }))
                 .executes(ctx -> {
-                    ctx.getSource().sendFeedback(Text.literal("[Lumin] /lumin gui|refresh|auto|set|top"));
+                    ctx.getSource().sendFeedback(Text.literal("[Lumin] /lumin gui|refresh|auto|set|top|debug"));
                     return 1;
                 })
             );

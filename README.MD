@@ -18,9 +18,9 @@ The "humanization" features (variable delays, thinking pauses, session breaks, f
 
 - **Bazaar margin flips**: scans `/v2/skyblock/bazaar` and finds items where the spread between best sell and best buy is profitable after tax.
 - **BIN snipe flips**: scans live auctions for underpriced Buy-It-Now listings.
-- **In-game GUI** (`/lumin gui` or keybind `K`) showing the top flips.
+- **In-game GUI** (`.lumin gui` or keybind `K`) showing the top flips.
 - **HUD overlay** showing how many flips are available.
-- **Automation engine** (`/lumin auto on` or keybind `J`) that clicks the GUI, places orders, and pays.
+- **Automation engine** (`.lumin auto on` or keybind `J`) that clicks the GUI, places orders, and pays.
 - **Humanization**: reaction delays, thinking pauses, micro-jitter, fatigue, and mandatory session breaks.
 
 ---
@@ -68,14 +68,17 @@ The output JAR is in `build/libs/luminclient-1.0.0.jar`.
 
 | Command | What it does |
 |---|---|
-| `/lumin` | help |
-| `/lumin gui` | open the flips GUI |
-| `/lumin refresh` | force a market scan |
-| `/lumin top` | print top flips in chat |
-| `/lumin auto on\|off` | toggle automation |
-| `/lumin set minmargin <pct>` | min bazaar margin % |
-| `/lumin set budget <coins>` | total budget |
-| `/lumin set maxspend <coins>` | max coins per automated order |
+| `.lumin` | help |
+| `.lumin gui` | open the flips GUI |
+| `.lumin refresh` | force a market scan |
+| `.lumin top` | print top flips in chat |
+| `.lumin auto on\|off` | toggle automation |
+| `.lumin set minmargin <pct>` | min bazaar margin % |
+| `.lumin set budget <coins>` | total budget |
+| `.lumin set maxspend <coins>` | max coins per automated order |
+| `.lumin debug on\|off` | toggle verbose debug logging |
+| `.lumin debug chat <on\|off>` | echo debug lines to chat |
+| `.lumin debug tail` | show last 10 debug lines |
 
 **Keybinds** (configurable in Controls):
 - `K` — open the flips GUI
@@ -100,11 +103,42 @@ These are controlled in `config/luminclient.json`:
   "automationEnabled": false,
   "clickDelayMs": 250,
   "automationMaxSpendPerOrder": 250000,
-  "automationMaxOrdersPerScan": 3
+  "automationMaxOrdersPerScan": 3,
+  "debugMode": false,
+  "debugToChat": false
 }
 ```
 
 > The full humanization model lives in `HumanClock.java`. The defaults aim for believable pacing, but you can tune it in code.
+
+---
+
+## Debug mode
+
+When something isn't working, turn on debug mode to see exactly what the mod is doing:
+
+```bash
+.lumin debug on          # enable verbose logging
+.lumin debug chat on     # also echo debug lines to in-game chat
+.lumin debug tail        # show the last 10 debug lines
+.lumin debug off         # turn it off
+```
+
+Debug output is written to:
+- the **game console** (via the mod logger)
+- `config/luminclient-debug.log` (rolling file)
+- **in-game chat** (if `debugToChat` is on)
+
+What it logs:
+- **API** — every HTTP request/response to Hypixel (URL, status, latency, body size)
+- **SCAN** — market scan start/end, how many products/auctions were parsed, how many flips were found
+- **FLIP** — flip detection decisions (which items matched, why they were included/excluded)
+- **AUTO** — automation decisions (which flip it picked, human-like delays, break status)
+- **GUI** — which screen is open, which slots were found/clicked, slot dumps
+- **CONFIG** — config load/save
+- **ERROR** — anything that failed (always logged, even if debug mode is off)
+
+This is the first thing to enable if flips aren't showing up, automation isn't clicking, or you suspect an API problem.
 
 ---
 
@@ -139,11 +173,12 @@ If you add an API key in config, it will be sent as the `API-Key` header, but th
 ## Project layout
 
 ```
-src/main/java/com/lumin/luminclient/
+src/main/java/com.lumin.luminclient/
 ├── LuminClient.java          # mod entrypoint
 ├── api/                      # Hypixel API client + models
 ├── config/                   # JSON config
-├── core/                     # commands + keybinds
+├── core/                     # commands + keybinds + Debug
+│   └── Debug.java            # debug/diagnostics logger
 ├── flip/                     # flip detection engine + strategies
 ├── gui/                      # screens + HUD
 ├── notify/                   # chat + sound alerts

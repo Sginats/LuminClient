@@ -45,6 +45,10 @@ public class LuminConfig {
     public double automationMaxSpendPerOrder = 250_000; // per-order spend cap
     public int automationMaxOrdersPerScan = 3;          // safety limit
 
+    // Debug / diagnostics
+    public boolean debugMode = false;      // verbose logging to console + file
+    public boolean debugToChat = false;    // also echo debug lines to in-game chat
+
     // Optional Hypixel API key. Public endpoints used by default do NOT need one.
     public String apiKey = "";
 
@@ -73,6 +77,8 @@ public class LuminConfig {
             if (o.has("clickDelayMs")) clickDelayMs = o.get("clickDelayMs").getAsInt();
             if (o.has("automationMaxSpendPerOrder")) automationMaxSpendPerOrder = o.get("automationMaxSpendPerOrder").getAsDouble();
             if (o.has("automationMaxOrdersPerScan")) automationMaxOrdersPerScan = o.get("automationMaxOrdersPerScan").getAsInt();
+            if (o.has("debugMode")) debugMode = o.get("debugMode").getAsBoolean();
+            if (o.has("debugToChat")) debugToChat = o.get("debugToChat").getAsBoolean();
             if (o.has("apiKey")) apiKey = o.get("apiKey").getAsString();
         } catch (Exception e) {
             // keep defaults on malformed config
@@ -95,6 +101,8 @@ public class LuminConfig {
         o.addProperty("clickDelayMs", clickDelayMs);
         o.addProperty("automationMaxSpendPerOrder", automationMaxSpendPerOrder);
         o.addProperty("automationMaxOrdersPerScan", automationMaxOrdersPerScan);
+        o.addProperty("debugMode", debugMode);
+        o.addProperty("debugToChat", debugToChat);
         o.addProperty("apiKey", apiKey);
         try {
             file.getParentFile().mkdirs();

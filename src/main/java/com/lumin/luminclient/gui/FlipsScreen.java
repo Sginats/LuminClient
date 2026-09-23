@@ -10,61 +10,116 @@ import net.minecraft.text.Text;
 import java.util.List;
 
 /**
- * In-game screen showing the current top flips.
+ * Modern, clean flips screen.
+ *
+ * Design goals:
+ *  - simple: just a list of the best flips, biggest profit first
+ *  - aesthetic: soft dark panel, subtle header, color-coded profit
+ *  - readable: generous spacing, clear columns, no clutter
  */
 public class FlipsScreen extends Screen {
+
+    // Palette
+    private static final int BG_PANEL   = 0xCC14161A;  // semi-transparent dark
+    private static final int BG_HEADER  = 0xFF1E2229;  // header bar
+    private static final int ACCENT     = 0xFF5BC0DE;  // cyan accent
+    private static final int TEXT_MAIN  = 0xFFEAEAEA;
+    private static final int TEXT_DIM   = 0xFF9AA0A6;
+    private static final int PROFIT     = 0xFF6FCF97;  // green
+    private static final int BUY        = 0xFF6FCF97;
+    private static final int SELL       = 0xFFEB5757;  // red
 
     private final FlipEngine flipEngine;
 
     public FlipsScreen(FlipEngine flipEngine) {
-        super(Text.literal("LuminClient - Top Flips"));
+        super(Text.literal("LuminClient"));
         this.flipEngine = flipEngine;
     }
 
     @Override
     protected void init() {
         int cx = this.width / 2;
+        int btnY = this.height - 32;
+
         this.addDrawableChild(ButtonWidget.builder(Text.literal("Refresh"), b -> {
             flipEngine.refreshNow();
-        }).dimensions(cx - 100, this.height - 30, 95, 20).build());
+        }).dimensions(cx - 110, btnY, 100, 20).build());
 
         this.addDrawableChild(ButtonWidget.builder(Text.literal("Close"), b -> {
             this.close();
-        }).dimensions(cx + 5, this.height - 30, 95, 20).build());
+        }).dimensions(cx + 10, btnY, 100, 20).build());
     }
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         this.renderBackground(context, mouseX, mouseY, delta);
-        super.render(context, mouseX, mouseY, delta);
 
-        context.drawCenteredTextWithShadow(this.textRenderer, this.title, this.width / 2, 12, 0xFFFFFF);
+        int panelW = Math.min(520, this.width - 40);
+        int panelH = this.height - 80;
+        int x0 = (this.width - panelW) / 2;
+        int y0 = 40;
+        int x1 = x0 + panelW;
+        int y1 = y0 + panelH;
 
+        // Panel
+        context.fill(x0, y0, x1, y1, BG_PANEL);
+        // Header bar
+        context.fill(x0, y0, x1, y0 + 26, BG_HEADER);
+        // Accent underline
+        context.fill(x0, y0 + 26, x1, y0 + 28, ACCENT);
+
+        // Title
+        context.drawCenteredTextWithShadow(this.textRenderer, "LuminClient  •  Top Flips",
+                this.width / 2, y0 + 9, TEXT_MAIN);
+
+        // Column headers
+        int colName = x0 + 16;
+        int colBuy  = x0 + panelW - 260;
+        int colSell = x0 + panelW - 170;
+        int colProf = x0 + panelW - 90;
+        int headerY = y0 + 38;
+
+        context.drawTextWithShadow(this.textRenderer, "Item", colName, headerY, TEXT_DIM);
+        context.drawTextWithShadow(this.textRenderer, "Buy",  colBuy,  headerY, TEXT_DIM);
+        context.drawTextWithShadow(this.textRenderer, "Sell", colSell, headerY, TEXT_DIM);
+        context.drawTextWithShadow(this.textRenderer, "Profit", colProf, headerY, TEXT_DIM);
+
+        // Rows
         List<FlipOpportunity> flips = flipEngine.getLatestFlips();
-        int y = 40;
-        int rowH = 14;
-        int maxRows = Math.min(flips.size(), 20);
-
-        context.drawTextWithShadow(this.textRenderer, "Item", 30, y - 12, 0xAAAAAA);
-        context.drawTextWithShadow(this.textRenderer, "Buy", 240, y - 12, 0xAAAAAA);
-        context.drawTextWithShadow(this.textRenderer, "Sell", 320, y - 12, 0xAAAAAA);
-        context.drawTextWithShadow(this.textRenderer, "Profit", 400, y - 12, 0xAAAAAA);
+        int y = headerY + 18;
+        int rowH = 16;
+        int maxRows = Math.min(flips.size(), (y1 - y - 10) / rowH);
 
         for (int i = 0; i < maxRows; i++) {
             FlipOpportunity f = flips.get(i);
-            String name = f.display.length() > 22 ? f.display.substring(0, 22) : f.display;
-            context.drawTextWithShadow(this.textRenderer, name, 30, y, 0xFFFFFF);
-            context.drawTextWithShadow(this.textRenderer, String.format("%.0f", f.buyAt), 240, y, 0x55FF55);
-            context.drawTextWithShadow(this.textRenderer, String.format("%.0f", f.sellAt), 320, y, 0xFF5555);
+
+            // zebra striping for readability
+            if (i % 2 == 0) {
+                context.fill(x0 + 8, y - 2, x1 - 8, y + rowH - 3, 0x22FFFFFF);
+            }
+
+            String name = f.display.length() > 24 ? f.display.substring(0, 24) + "…" : f.display;
+            context.drawTextWithShadow(this.textRenderer, name, colName, y, TEXT_MAIN);
+            context.drawTextWithShadow(this.textRenderer, formatCoins(f.buyAt),  colBuy,  y, BUY);
+            context.drawTextWithShadow(this.textRenderer, formatCoins(f.sellAt), colSell, y, SELL);
             context.drawTextWithShadow(this.textRenderer,
-                    String.format("+%.0f (%.1f%%)", f.profitPerUnit, f.profitPercent), 400, y, 0xFFFF55);
+                    "+" + formatCoins(f.profitPerUnit) + " (" + String.format("%.1f", f.profitPercent) + "%)",
+                    colProf, y, PROFIT);
             y += rowH;
         }
 
         if (flips.isEmpty()) {
             context.drawCenteredTextWithShadow(this.textRenderer,
                     "No flips yet. Press Refresh or wait for the next scan.",
-                    this.width / 2, this.height / 2, 0xAAAAAA);
+                    this.width / 2, (y0 + y1) / 2, TEXT_DIM);
         }
+
+        super.render(context, mouseX, mouseY, delta);
+    }
+
+    private static String formatCoins(double v) {
+        if (v >= 1_000_000) return String.format("%.1fM", v / 1_000_000.0);
+        if (v >= 1_000)     return String.format("%.1fk", v / 1_000.0);
+        return String.format("%.0f", v);
     }
 }
