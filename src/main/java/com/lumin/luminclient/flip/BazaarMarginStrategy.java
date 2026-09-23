@@ -13,9 +13,9 @@ import java.util.List;
  *
  * A bazaar margin flip is: place a BUY ORDER slightly above the current best buy
  * order, get filled, then place a SELL OFFER slightly below the current best sell
- * offer. The "spread" between best sell and best buy is your gross margin.
+ * offer. The spread between best sell and best buy is the gross margin.
  *
- * This mod only computes and displays these margins. It does not place the orders.
+ * This class only computes and ranks margins. Execution is done by the automation layer.
  */
 public final class BazaarMarginStrategy {
 
@@ -38,7 +38,6 @@ public final class BazaarMarginStrategy {
             if (pct < cfg.minMarginPercent) continue;
             if (net < cfg.minProfitPerFlip && pct < cfg.minMarginPercent * 2) continue;
 
-            // How many units does our budget cover, capped by visible liquidity
             long budgetUnits = (long) Math.floor(cfg.maxBudget / buy);
             long liquidityCap = Math.max(1, Math.min(p.buyVolume, p.sellVolume) / 20); // <=5% of book
             long units = Math.max(1, Math.min(budgetUnits, liquidityCap));
@@ -47,6 +46,7 @@ public final class BazaarMarginStrategy {
             out.add(new FlipOpportunity(
                     FlipOpportunity.Type.BAZAAR_MARGIN,
                     prettyName(p.productId),
+                    p.productId,
                     buy, sell, net, pct, units, Math.min(p.buyVolume, p.sellVolume)));
         }
 

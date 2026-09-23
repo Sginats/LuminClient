@@ -9,6 +9,7 @@ public final class FlipOpportunity {
 
     public final Type type;
     public final String display;      // short human name (product id or item name)
+    public final String productId;    // raw product id or item id (automation needs this)
     public final double buyAt;        // price to buy at
     public final double sellAt;       // expected price to sell at
     public final double profitPerUnit;
@@ -18,6 +19,7 @@ public final class FlipOpportunity {
 
     public FlipOpportunity(Type type,
                            String display,
+                           String productId,
                            double buyAt,
                            double sellAt,
                            double profitPerUnit,
@@ -26,6 +28,7 @@ public final class FlipOpportunity {
                            long volumeHint) {
         this.type = type;
         this.display = display;
+        this.productId = productId;
         this.buyAt = buyAt;
         this.sellAt = sellAt;
         this.profitPerUnit = profitPerUnit;

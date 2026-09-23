@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import net.fabricmc.loader.api.FabricLoader;
 
 import java.io.File;
 import java.io.FileReader;
@@ -11,7 +12,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 
 /**
- * Simple JSON-backed config. Stored in the Forge config dir.
+ * Simple JSON-backed config. Stored in the Fabric config dir.
  * Never stores secrets - the public Hypixel endpoints used here need no key.
  */
 public class LuminConfig {
@@ -30,19 +31,25 @@ public class LuminConfig {
     // Flip strategy
     public boolean enableBazaarMarginFlips = true;
     public boolean enableBinSnipeFlips = true;
-    public double minBinFlipPercent = 8.0;     // BIN vs lowest BIN / lbin gap %
+    public double minBinFlipPercent = 8.0;     // BIN vs lowest BIN gap %
 
     // Notifications
     public boolean chatNotifications = true;
     public boolean soundAlerts = true;
 
+    // Automation
+    // WARNING: enabling this makes the mod click/place orders/pay for you.
+    // This violates Hypixel rules and can get the account banned. Default OFF.
+    public boolean automationEnabled = false;
+    public int clickDelayMs = 250;             // delay between automated clicks
+    public double automationMaxSpendPerOrder = 250_000; // per-order spend cap
+    public int automationMaxOrdersPerScan = 3;          // safety limit
+
     // Optional Hypixel API key. Public endpoints used by default do NOT need one.
-    // If the user sets one it is stored in the separate -local file that is gitignored.
     public String apiKey = "";
 
-    public LuminConfig(File suggestedFile) {
-        File dir = suggestedFile.getParentFile();
-        this.file = new File(dir, "luminclient.json");
+    public LuminConfig() {
+        this.file = FabricLoader.getInstance().getConfigDir().resolve("luminclient.json").toFile();
     }
 
     public void load() {
@@ -62,6 +69,10 @@ public class LuminConfig {
             if (o.has("minBinFlipPercent")) minBinFlipPercent = o.get("minBinFlipPercent").getAsDouble();
             if (o.has("chatNotifications")) chatNotifications = o.get("chatNotifications").getAsBoolean();
             if (o.has("soundAlerts")) soundAlerts = o.get("soundAlerts").getAsBoolean();
+            if (o.has("automationEnabled")) automationEnabled = o.get("automationEnabled").getAsBoolean();
+            if (o.has("clickDelayMs")) clickDelayMs = o.get("clickDelayMs").getAsInt();
+            if (o.has("automationMaxSpendPerOrder")) automationMaxSpendPerOrder = o.get("automationMaxSpendPerOrder").getAsDouble();
+            if (o.has("automationMaxOrdersPerScan")) automationMaxOrdersPerScan = o.get("automationMaxOrdersPerScan").getAsInt();
             if (o.has("apiKey")) apiKey = o.get("apiKey").getAsString();
         } catch (Exception e) {
             // keep defaults on malformed config
@@ -80,6 +91,10 @@ public class LuminConfig {
         o.addProperty("minBinFlipPercent", minBinFlipPercent);
         o.addProperty("chatNotifications", chatNotifications);
         o.addProperty("soundAlerts", soundAlerts);
+        o.addProperty("automationEnabled", automationEnabled);
+        o.addProperty("clickDelayMs", clickDelayMs);
+        o.addProperty("automationMaxSpendPerOrder", automationMaxSpendPerOrder);
+        o.addProperty("automationMaxOrdersPerScan", automationMaxOrdersPerScan);
         o.addProperty("apiKey", apiKey);
         try {
             file.getParentFile().mkdirs();

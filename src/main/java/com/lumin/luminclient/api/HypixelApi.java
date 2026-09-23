@@ -16,11 +16,8 @@ import java.util.zip.GZIPInputStream;
  * Minimal HTTP client for the public Hypixel API.
  *
  * Endpoints used (all public, no key required):
- *  - GET /v2/skyblock/bazaar       -> full bazaar product snapshot
- *  - GET /v2/skyblock/auctions     -> paginated live auctions (for BIN snipe detection)
- *
- * Optional API key support is included for endpoints that require it, but the
- * flip engine only depends on the keyless endpoints above.
+ *  - GET /v2/skyblock/bazaar   -> full bazaar product snapshot
+ *  - GET /v2/skyblock/auctions -> paginated live auctions (for BIN snipe detection)
  */
 public class HypixelApi {
 
