@@ -1,0 +1,16 @@
+[
+  {
+    "modid": "luminclient",
+    "name": "LuminClient",
+    "description": "Hypixel SkyBlock bazaar and auction flip assistant. Uses the public Hypixel API to find profitable flips. Market analytics only - it never clicks or plays for you.",
+    "version": "${version}",
+    "mcversion": "${mcversion}",
+    "url": "",
+    "updateUrl": "",
+    "authorList": ["Lumin"],
+    "credits": "Hypixel public API",
+    "logoFile": "",
+    "screenshots": [],
+    "dependencies": []
+  }
+]
