@@ -19,7 +19,8 @@ This document is a map of the repository for maintainers and coding agents. It d
 │   │   │   ├── LuminClient.java           # Fabric client entrypoint and dependency wiring
 │   │   │   ├── api/
 │   │   │   │   ├── HypixelApi.java         # HTTP client, retries, rate-limit handling
-│   │   │   │   └── Models.java              # JSON-to-domain parsing
+│   │   │   │   ├── Models.java              # JSON-to-immutable market parsing
+│   │   │   │   └── market/                  # Immutable snapshots, order books, fees, and metrics
 │   │   │   ├── auto/
 │   │   │   │   ├── AutomationEngine.java   # Automation queue, budgets, GUI actions
 │   │   │   │   ├── GuiAutomation.java      # Defensive inventory slot lookup/click helpers

@@ -40,7 +40,7 @@ public final class CommandActions {
         int i = 0;
         for (FlipOpportunity f : flips) {
             if (i++ >= 10) break;
-            out.add(String.format("  %s | buy %.0f sell %.0f | +%.0f (%.1f%%)",
+            out.add(String.format("  %s | buy %d sell %d | +%d (%.1f%%)",
                     f.display, f.buyAt, f.sellAt, f.profitPerUnit, f.profitPercent));
         }
         return out;

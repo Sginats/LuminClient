@@ -27,7 +27,7 @@ public final class Notifier {
                 FlipOpportunity best = flips.get(0);
                 if (config.chatNotifications) {
                     mc.player.sendMessage(Text.literal(String.format(
-                            "[Lumin] Best flip: %s +%.0f (%.1f%%)",
+                            "[Lumin] Best flip: %s +%d (%.1f%%)",
                             best.display, best.profitPerUnit, best.profitPercent)), false);
                 }
                 if (config.soundAlerts && mc.player != null) {
