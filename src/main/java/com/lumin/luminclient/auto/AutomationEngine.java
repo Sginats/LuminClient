@@ -5,15 +5,23 @@ import com.lumin.luminclient.config.LuminConfig;
 import com.lumin.luminclient.core.Debug;
 import com.lumin.luminclient.flip.FlipEngine;
 import com.lumin.luminclient.flip.FlipOpportunity;
+import com.lumin.luminclient.stats.SessionAnalytics;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.ingame.HandledScreen;
 import net.minecraft.screen.slot.Slot;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
 
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -38,17 +46,25 @@ public class AutomationEngine implements FlipEngine.Listener {
     private final LuminConfig config;
     private final FlipEngine flipEngine;
     private final HumanClock clock = HumanClock.defaultProfile();
+    private final SessionAnalytics analytics;
 
     private final List<FlipOpportunity> pendingFlips = new CopyOnWriteArrayList<FlipOpportunity>();
     private final AtomicBoolean enabled = new AtomicBoolean(false);
     private final AtomicBoolean busy = new AtomicBoolean(false);
+    private final Map<String, Long> recentOrderByKey = new HashMap<String, Long>();
+    private final Set<String> pendingOrderKeys = new HashSet<String>();
 
     private ScheduledExecutorService scheduler;
     private long nextActionAtMs = 0L;
+    private long failureCooldownUntilMs = 0L;
+    private String dailyCounterDay = "";
+    private double dailySpend = 0.0;
+    private double dailyEstimatedLoss = 0.0;
 
-    public AutomationEngine(LuminConfig config, FlipEngine flipEngine) {
+    public AutomationEngine(LuminConfig config, FlipEngine flipEngine, SessionAnalytics analytics) {
         this.config = config;
         this.flipEngine = flipEngine;
+        this.analytics = analytics;
     }
 
     public void start() {
@@ -81,12 +97,20 @@ public class AutomationEngine implements FlipEngine.Listener {
     public void onNewFlips(List<FlipOpportunity> flips) {
         if (!enabled.get()) return;
         if (!config.automationEnabled) return;
+        rollDailyBudgetIfNeeded();
+        pruneDuplicateCache();
         // Queue the top N flips within our per-order budget cap
         int count = 0;
         for (FlipOpportunity f : flips) {
             if (count >= config.automationMaxOrdersPerScan) break;
             if (f.buyAt > config.automationMaxSpendPerOrder) continue;
+            if (!passesItemFilters(f)) continue;
+            if (dailySpend + f.buyAt > config.automationMaxDailySpend) continue;
+            double estLoss = Math.max(0.0, f.buyAt - f.sellAt);
+            if (dailyEstimatedLoss + estLoss > config.automationMaxDailyLoss) continue;
+            if (config.automationPreventDuplicateOrders && isDuplicateFlip(f)) continue;
             pendingFlips.add(f);
+            rememberPendingFlip(f);
             count++;
         }
     }
@@ -102,23 +126,49 @@ public class AutomationEngine implements FlipEngine.Listener {
             Debug.log(Debug.Category.AUTO, "In mandatory break, " + (remaining / 1000) + "s remaining");
             return;
         }
+        if (now < failureCooldownUntilMs) {
+            return;
+        }
         if (now < nextActionAtMs) {
             return;
         }
 
         FlipOpportunity next = pendingFlips.isEmpty() ? null : pendingFlips.remove(0);
         if (next == null) return;
+        forgetPendingFlip(next);
+        rollDailyBudgetIfNeeded();
 
         Debug.log(Debug.Category.AUTO, "Executing flip: " + next.display + " type=" + next.type
                 + " buy=" + next.buyAt + " sell=" + next.sellAt);
 
         busy.set(true);
+        long start = System.nanoTime();
+        boolean success = false;
+        String failureReason = null;
         try {
-            executeFlip(next);
+            success = executeFlip(next);
+            if (success) {
+                dailySpend += Math.max(0.0, next.buyAt);
+                dailyEstimatedLoss += Math.max(0.0, next.buyAt - next.sellAt);
+                rememberExecutedFlip(next);
+            } else {
+                failureReason = "not-executed";
+            }
         } catch (Throwable t) {
             LuminClient.LOGGER.warn("Automation error", t);
             Debug.log(Debug.Category.ERROR, "Automation error while flipping " + next.display, t);
+            failureReason = t.getClass().getSimpleName();
+            long cooldownMs = Math.max(0L, config.automationFailureCooldownSeconds * 1000L);
+            failureCooldownUntilMs = System.currentTimeMillis() + cooldownMs;
         } finally {
+            long latencyMs = (System.nanoTime() - start) / 1_000_000L;
+            analytics.recordAttempt(
+                    Math.max(0.0, next.buyAt),
+                    latencyMs,
+                    success,
+                    next.sellAt - next.buyAt,
+                    success ? null : failureReason
+            );
             long delay = clock.nextActionDelayMs(System.currentTimeMillis());
             nextActionAtMs = System.currentTimeMillis() + delay;
             Debug.log(Debug.Category.AUTO, "Next action in " + delay + "ms");
@@ -132,44 +182,51 @@ public class AutomationEngine implements FlipEngine.Listener {
      * implementation is intentionally defensive: it only clicks when it can
      * positively identify the right slot, and backs off otherwise.
      */
-    private void executeFlip(FlipOpportunity flip) {
+    private boolean executeFlip(FlipOpportunity flip) {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.player == null) {
             Debug.log(Debug.Category.AUTO, "No player in world - not executing");
-            return;
-        }
-        if (mc.currentScreen == null) {
-            Debug.log(Debug.Category.GUI, "No screen open");
-            say("[Lumin] Open the Bazaar or Auction House, then let me work.");
-            return;
-        }
-        if (!(mc.currentScreen instanceof HandledScreen)) {
-            Debug.log(Debug.Category.GUI, "Current screen is not a HandledScreen: "
-                    + mc.currentScreen.getClass().getSimpleName());
-            say("[Lumin] No inventory screen open.");
-            return;
+            return false;
         }
 
-        HandledScreen<?> screen = (HandledScreen<?>) mc.currentScreen;
-        Debug.log(Debug.Category.GUI, "Screen title: " + screen.getTitle().getString());
+        HandledScreen<?> screen = callOnClientThread(() -> {
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client.currentScreen == null) {
+                Debug.log(Debug.Category.GUI, "No screen open");
+                say("[Lumin] Open the Bazaar or Auction House, then let me work.");
+                return null;
+            }
+            if (!(client.currentScreen instanceof HandledScreen)) {
+                Debug.log(Debug.Category.GUI, "Current screen is not a HandledScreen: "
+                        + client.currentScreen.getClass().getSimpleName());
+                say("[Lumin] No inventory screen open.");
+                return null;
+            }
+            HandledScreen<?> handled = (HandledScreen<?>) client.currentScreen;
+            Debug.log(Debug.Category.GUI, "Screen title: " + handled.getTitle().getString());
+            return handled;
+        });
+        if (screen == null) {
+            return false;
+        }
 
         switch (flip.type) {
             case BAZAAR_MARGIN:
-                doBazaarMarginFlip(screen, flip);
-                break;
+                return doBazaarMarginFlip(screen, flip);
             case BIN_SNIPE:
-                doBinSnipe(screen, flip);
-                break;
+                return doBinSnipe(screen, flip);
+            default:
+                return false;
         }
     }
 
-    private void doBazaarMarginFlip(HandledScreen<?> screen, FlipOpportunity flip) {
+    private boolean doBazaarMarginFlip(HandledScreen<?> screen, FlipOpportunity flip) {
         // 1) Find the bazaar product slot by name
-        Slot product = GuiAutomation.findSlotByName(screen, flip.display);
+        Slot product = callOnClientThread(() -> GuiAutomation.findSlotByName(screen, flip.display));
         if (product == null) {
             Debug.log(Debug.Category.GUI, "Could not find bazaar item slot: " + flip.display);
             say("[Lumin] Could not find bazaar item: " + flip.display);
-            return;
+            return false;
         }
         Debug.log(Debug.Category.GUI, "Found product slot " + product.id + " for " + flip.display);
 
@@ -178,7 +235,7 @@ public class AutomationEngine implements FlipEngine.Listener {
         sleep(clock.nextActionDelayMs(System.currentTimeMillis()));
 
         // 3) In the product view, find "Buy Instantly" / "Create Buy Order"
-        Slot buy = GuiAutomation.findSlotByName(screen, "buy");
+        Slot buy = callOnClientThread(() -> GuiAutomation.findSlotByName(screen, "buy"));
         if (buy != null) {
             Debug.log(Debug.Category.GUI, "Found buy slot " + buy.id);
             clickHumanlike(screen, buy.id);
@@ -192,15 +249,16 @@ public class AutomationEngine implements FlipEngine.Listener {
         //    stop here and let the human confirm the amount. This is the "assist" mode.
         Debug.log(Debug.Category.AUTO, "Staged buy order for " + flip.display + " at " + flip.buyAt);
         say("[Lumin] Buy order staged for " + flip.display + " at " + flip.buyAt + " coins. Confirm amount to pay.");
+        return true;
     }
 
-    private void doBinSnipe(HandledScreen<?> screen, FlipOpportunity flip) {
+    private boolean doBinSnipe(HandledScreen<?> screen, FlipOpportunity flip) {
         // 1) Find the AH item slot by name
-        Slot item = GuiAutomation.findSlotByName(screen, flip.display);
+        Slot item = callOnClientThread(() -> GuiAutomation.findSlotByName(screen, flip.display));
         if (item == null) {
             Debug.log(Debug.Category.GUI, "Could not find auction slot: " + flip.display);
             say("[Lumin] Could not find auction: " + flip.display);
-            return;
+            return false;
         }
         Debug.log(Debug.Category.GUI, "Found auction slot " + item.id + " for " + flip.display);
 
@@ -209,21 +267,26 @@ public class AutomationEngine implements FlipEngine.Listener {
         sleep(clock.nextActionDelayMs(System.currentTimeMillis()));
 
         // 3) Click the "Buy" / confirm slot
-        Slot buy = GuiAutomation.findSlotByName(screen, "buy");
+        Slot buy = callOnClientThread(() -> GuiAutomation.findSlotByName(screen, "buy"));
         if (buy != null) {
             Debug.log(Debug.Category.GUI, "Found confirm slot " + buy.id);
             clickHumanlike(screen, buy.id);
             Debug.log(Debug.Category.AUTO, "Bought " + flip.display + " for " + flip.buyAt);
             say("[Lumin] Bought " + flip.display + " for " + flip.buyAt + " coins.");
+            return true;
         } else {
             Debug.log(Debug.Category.GUI, "No buy/confirm slot found in auction view");
+            return false;
         }
     }
 
     private void clickHumanlike(HandledScreen<?> screen, int slotId) {
         // Pre-click micro-pause
         sleep(clock.nextActionDelayMs(System.currentTimeMillis()) / 2);
-        GuiAutomation.clickSlot(screen, slotId, 0, SlotActionType.PICKUP);
+        callOnClientThread(() -> {
+            GuiAutomation.clickSlot(screen, slotId, 0, SlotActionType.PICKUP);
+            return null;
+        });
     }
 
     private void sleep(long ms) {
@@ -235,9 +298,121 @@ public class AutomationEngine implements FlipEngine.Listener {
     }
 
     private void say(String msg) {
+        callOnClientThread(() -> {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc.player != null) {
+                mc.player.sendMessage(Text.literal(msg), false);
+            }
+            return null;
+        });
+    }
+
+    public void stop() {
+        enabled.set(false);
+        busy.set(false);
+        pendingFlips.clear();
+        synchronized (this) {
+            pendingOrderKeys.clear();
+            recentOrderByKey.clear();
+        }
+        if (scheduler != null) {
+            scheduler.shutdownNow();
+            scheduler = null;
+        }
+    }
+
+    private synchronized void rollDailyBudgetIfNeeded() {
+        String day = java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString();
+        if (!day.equals(dailyCounterDay)) {
+            dailyCounterDay = day;
+            dailySpend = 0.0;
+            dailyEstimatedLoss = 0.0;
+        }
+    }
+
+    private boolean passesItemFilters(FlipOpportunity f) {
+        String id = normalizeId(f.productId);
+        String display = normalizeId(f.display);
+        boolean hasWhitelist = config.automationWhitelistItemIds != null && config.automationWhitelistItemIds.length > 0;
+        if (hasWhitelist) {
+            boolean match = false;
+            for (String w : config.automationWhitelistItemIds) {
+                String n = normalizeId(w);
+                if (!n.isEmpty() && (id.contains(n) || display.contains(n))) {
+                    match = true;
+                    break;
+                }
+            }
+            if (!match) return false;
+        }
+        if (config.automationBlacklistItemIds != null) {
+            for (String b : config.automationBlacklistItemIds) {
+                String n = normalizeId(b);
+                if (!n.isEmpty() && (id.contains(n) || display.contains(n))) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private synchronized boolean isDuplicateFlip(FlipOpportunity f) {
+        String key = flipKey(f);
+        if (pendingOrderKeys.contains(key)) return true;
+        Long last = recentOrderByKey.get(key);
+        return last != null && (System.currentTimeMillis() - last) < TimeUnit.MINUTES.toMillis(10);
+    }
+
+    private synchronized void rememberPendingFlip(FlipOpportunity f) {
+        pendingOrderKeys.add(flipKey(f));
+    }
+
+    private synchronized void forgetPendingFlip(FlipOpportunity f) {
+        pendingOrderKeys.remove(flipKey(f));
+    }
+
+    private synchronized void rememberExecutedFlip(FlipOpportunity f) {
+        recentOrderByKey.put(flipKey(f), System.currentTimeMillis());
+    }
+
+    private synchronized void pruneDuplicateCache() {
+        long cutoff = System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(10);
+        recentOrderByKey.entrySet().removeIf(e -> e.getValue() < cutoff);
+    }
+
+    private String flipKey(FlipOpportunity f) {
+        String base = (f.productId == null || f.productId.isEmpty()) ? f.display : f.productId;
+        return normalizeId(base) + "|" + f.type;
+    }
+
+    private static String normalizeId(String s) {
+        return s == null ? "" : s.toLowerCase(Locale.ROOT).trim();
+    }
+
+    private <T> T callOnClientThread(java.util.concurrent.Callable<T> callable) {
         MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.player != null) {
-            mc.player.sendMessage(Text.literal(msg), false);
+        if (mc.isOnThread()) {
+            try {
+                return callable.call();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
+        FutureTask<T> task = new FutureTask<T>(() -> {
+            try {
+                return callable.call();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+        mc.execute(task);
+        try {
+            return task.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException(e.getCause());
         }
     }
 }

@@ -79,6 +79,7 @@ The output JAR is in `build/libs/luminclient-1.0.0.jar`.
 | `.lumin debug on\|off` | toggle verbose debug logging |
 | `.lumin debug chat <on\|off>` | echo debug lines to chat |
 | `.lumin debug tail` | show last 10 debug lines |
+| `.lumin stats` | show daily automation analytics |
 
 **Keybinds** (configurable in Controls):
 - `K` — open the flips GUI
@@ -100,10 +101,15 @@ These are controlled in `config/luminclient.json`:
 
 ```json
 {
+  "configVersion": 1,
   "automationEnabled": false,
   "clickDelayMs": 250,
   "automationMaxSpendPerOrder": 250000,
   "automationMaxOrdersPerScan": 3,
+  "automationMaxDailySpend": 5000000,
+  "automationMaxDailyLoss": 500000,
+  "automationFailureCooldownSeconds": 60,
+  "automationPreventDuplicateOrders": true,
   "debugMode": false,
   "debugToChat": false
 }

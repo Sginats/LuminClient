@@ -9,6 +9,8 @@ import com.lumin.luminclient.core.LuminCommand;
 import com.lumin.luminclient.flip.FlipEngine;
 import com.lumin.luminclient.gui.GuiManager;
 import com.lumin.luminclient.notify.Notifier;
+import com.lumin.luminclient.stats.SessionAnalytics;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.api.ClientModInitializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +34,7 @@ public class LuminClient implements ClientModInitializer {
     private FlipEngine flipEngine;
     private GuiManager guiManager;
     private AutomationEngine automationEngine;
+    private SessionAnalytics analytics;
 
     @Override
     public void onInitializeClient() {
@@ -42,19 +45,30 @@ public class LuminClient implements ClientModInitializer {
         Debug.init(config);
         Debug.log(Debug.Category.CONFIG, "Config loaded. debugMode=" + config.debugMode + " debugToChat=" + config.debugToChat);
 
+        analytics = new SessionAnalytics();
         flipEngine = new FlipEngine(config);
         guiManager = new GuiManager(config, flipEngine);
-        automationEngine = new AutomationEngine(config, flipEngine);
+        automationEngine = new AutomationEngine(config, flipEngine, analytics);
 
         Keybinds.register(config, guiManager, automationEngine);
-        LuminCommand.register(config, flipEngine, guiManager, automationEngine);
-        ChatCommandHandler.register(config, flipEngine, guiManager, automationEngine);
+        LuminCommand.register(config, flipEngine, guiManager, automationEngine, analytics);
+        ChatCommandHandler.register(config, flipEngine, guiManager, automationEngine, analytics);
         Notifier.register(config, flipEngine);
 
         flipEngine.start();
         automationEngine.start();
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> shutdown());
 
         LOGGER.info("{} initialized (automation enabled={})", MOD_NAME, config.automationEnabled);
+    }
+
+    private void shutdown() {
+        if (automationEngine != null) {
+            automationEngine.stop();
+        }
+        if (flipEngine != null) {
+            flipEngine.stop();
+        }
     }
 
     public static LuminClient getInstance() {

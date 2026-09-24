@@ -11,6 +11,7 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.zip.GZIPInputStream;
 
 /**
@@ -24,9 +25,12 @@ public class HypixelApi {
 
     private static final String BASE = "https://api.hypixel.net";
     private static final int TIMEOUT_MS = 10_000;
+    private static final int MAX_ATTEMPTS = 3;
+    private static final long BASE_BACKOFF_MS = 500L;
     private static final Gson GSON = new Gson();
 
     private final String apiKey;
+    private volatile long cooldownUntilMs = 0L;
 
     public HypixelApi(String apiKey) {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
@@ -41,6 +45,33 @@ public class HypixelApi {
     }
 
     private JsonObject get(String urlStr) throws IOException {
+        long now = System.currentTimeMillis();
+        if (now < cooldownUntilMs) {
+            long waitMs = cooldownUntilMs - now;
+            throw new IOException("Hypixel API cooldown active for " + waitMs + "ms");
+        }
+
+        IOException last = null;
+        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            try {
+                long inLoopNow = System.currentTimeMillis();
+                if (inLoopNow < cooldownUntilMs) {
+                    sleep(cooldownUntilMs - inLoopNow);
+                }
+                return getOnce(urlStr);
+            } catch (IOException e) {
+                last = e;
+                long backoff = jitteredBackoffMs(attempt);
+                Debug.log(Debug.Category.API, "Request failed (attempt " + attempt + "/" + MAX_ATTEMPTS + "): " + e.getMessage());
+                if (attempt < MAX_ATTEMPTS) {
+                    sleep(backoff);
+                }
+            }
+        }
+        throw last == null ? new IOException("Unknown HTTP failure") : last;
+    }
+
+    private JsonObject getOnce(String urlStr) throws IOException {
         HttpURLConnection conn = null;
         long startNs = System.nanoTime();
         try {
@@ -87,6 +118,15 @@ public class HypixelApi {
                 Debug.log(Debug.Category.ERROR, "Empty/invalid JSON (HTTP " + code + ") from " + urlStr);
                 throw new IOException("Empty/invalid JSON (HTTP " + code + ")");
             }
+            if (code == 429) {
+                long retryAfterMs = parseRetryAfterMs(conn);
+                cooldownUntilMs = System.currentTimeMillis() + retryAfterMs;
+                Debug.log(Debug.Category.ERROR, "Rate limited (429). Cooling down for " + retryAfterMs + "ms");
+                throw new IOException("Rate limited (429)");
+            }
+            if (code >= 500) {
+                throw new IOException("HTTP " + code + " server error");
+            }
             if (code >= 400) {
                 String cause = json.has("cause") ? json.get("cause").getAsString() : "unknown";
                 Debug.log(Debug.Category.ERROR, "HTTP " + code + " from " + urlStr + ": " + cause);
@@ -102,6 +142,32 @@ public class HypixelApi {
             if (conn != null) {
                 conn.disconnect();
             }
+        }
+    }
+
+    private static long parseRetryAfterMs(HttpURLConnection conn) {
+        String retryAfter = conn.getHeaderField("Retry-After");
+        if (retryAfter != null) {
+            try {
+                long sec = Long.parseLong(retryAfter.trim());
+                return Math.max(1_000L, sec * 1_000L);
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return 10_000L;
+    }
+
+    private static long jitteredBackoffMs(int attempt) {
+        long cap = BASE_BACKOFF_MS * (1L << Math.max(0, attempt - 1));
+        return cap + ThreadLocalRandom.current().nextLong(150L, 401L);
+    }
+
+    private static void sleep(long ms) throws IOException {
+        try {
+            Thread.sleep(Math.max(0L, ms));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while waiting for retry", e);
         }
     }
 }
