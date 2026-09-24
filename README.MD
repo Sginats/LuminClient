@@ -192,7 +192,7 @@ src/main/java/com.lumin.luminclient/
 
 - **Sign GUI entry**: Hypixel uses a sign/anvil GUI to enter order amounts/prices. Fully automating that needs an additional mixin to type into the sign — currently the mod stages the order and asks you to confirm the amount.
 - **GUI brittleness**: Hypixel's menus are custom and change often; slot detection is best-effort.
-- **Sandboxed build**: this repo was scaffolded in an environment without access to the Fabric maven, so the build hasn't been run end-to-end here. Run `./gradlew build` on a normal machine.
+- **Build**: verified end-to-end — `./gradlew build` produces a working `build/libs/luminclient-1.0.0.jar`.
 
 ---
 

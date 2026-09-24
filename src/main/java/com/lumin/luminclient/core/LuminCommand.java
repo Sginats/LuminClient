@@ -1,11 +1,10 @@
-package com/lumin/luminclient.core;
+package com.lumin.luminclient.core;
 
-import com/lumin/luminclient.auto.AutomationEngine;
-import com/lumin/luminclient.config.LuminConfig;
-import com/lumin/luminclient.core.Debug;
-import com/lumin/luminclient.flip.FlipEngine;
-import com/lumin/luminclient.flip.FlipOpportunity;
-import com/lumin/luminclient.gui.GuiManager;
+import com.lumin.luminclient.auto.AutomationEngine;
+import com.lumin.luminclient.config.LuminConfig;
+import com.lumin.luminclient.flip.FlipEngine;
+import com.lumin.luminclient.flip.FlipOpportunity;
+import com.lumin.luminclient.gui.GuiManager;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
