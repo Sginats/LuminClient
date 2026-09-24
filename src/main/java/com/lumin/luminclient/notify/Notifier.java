@@ -22,17 +22,18 @@ public final class Notifier {
             if (flips == null || flips.isEmpty()) return;
 
             MinecraftClient mc = MinecraftClient.getInstance();
-            if (mc.player == null) return;
-
-            FlipOpportunity best = flips.get(0);
-            if (config.chatNotifications) {
-                mc.player.sendMessage(Text.literal(String.format(
-                        "[Lumin] Best flip: %s +%.0f (%.1f%%)",
-                        best.display, best.profitPerUnit, best.profitPercent)), false);
-            }
-            if (config.soundAlerts && mc.player != null) {
-                mc.player.playSound(SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
-            }
+            mc.execute(() -> {
+                if (mc.player == null) return;
+                FlipOpportunity best = flips.get(0);
+                if (config.chatNotifications) {
+                    mc.player.sendMessage(Text.literal(String.format(
+                            "[Lumin] Best flip: %s +%.0f (%.1f%%)",
+                            best.display, best.profitPerUnit, best.profitPercent)), false);
+                }
+                if (config.soundAlerts && mc.player != null) {
+                    mc.player.playSound(SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
+                }
+            });
         });
     }
 }

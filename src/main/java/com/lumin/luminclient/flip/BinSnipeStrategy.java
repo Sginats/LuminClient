@@ -30,6 +30,7 @@ public final class BinSnipeStrategy {
     public List<FlipOpportunity> findFlips(HypixelApi api, LuminConfig cfg) throws IOException {
         List<FlipOpportunity> out = new ArrayList<FlipOpportunity>();
         if (!cfg.enableBinSnipeFlips) return out;
+        long now = System.currentTimeMillis();
 
         // Only scan the first few pages for speed; newest auctions are on page 0.
         int maxPages = 3;
@@ -49,6 +50,7 @@ public final class BinSnipeStrategy {
                 double price = a.has("starting_bid") ? a.get("starting_bid").getAsDouble() : 0;
                 long end = a.has("end") ? a.get("end").getAsLong() : 0L;
                 if (price <= 0) continue;
+                if (end > 0 && end - now < 30_000L) continue; // too close to expiry
 
                 byItem.computeIfAbsent(itemId, k -> new ArrayList<Models.BinAuction>())
                       .add(new Models.BinAuction(uuid, name, itemId, price, end));
@@ -58,19 +60,20 @@ public final class BinSnipeStrategy {
         // For each item, find the lowest BIN and flag anything below it by threshold
         for (Map.Entry<String, List<Models.BinAuction>> e : byItem.entrySet()) {
             List<Models.BinAuction> list = e.getValue();
-            if (list.size() < 2) continue;
+            if (list.size() < 4) continue;
 
             Collections.sort(list, Comparator.comparingDouble(b -> b.price));
             double lowest = list.get(0).price;
             double secondLowest = list.size() > 1 ? list.get(1).price : lowest;
+            double reference = robustReferencePrice(list);
 
             // If the cheapest is much cheaper than the next one, it's a snipe candidate
-            if (secondLowest <= 0) continue;
-            double gapPct = (secondLowest - lowest) / secondLowest * 100.0;
+            if (secondLowest <= 0 || reference <= 0) continue;
+            double gapPct = (reference - lowest) / reference * 100.0;
             if (gapPct < cfg.minBinFlipPercent) continue;
 
             Models.BinAuction target = list.get(0);
-            double profit = secondLowest - lowest;
+            double profit = reference - lowest;
             if (profit < cfg.minProfitPerFlip) continue;
 
             out.add(new FlipOpportunity(
@@ -85,5 +88,17 @@ public final class BinSnipeStrategy {
             return new ArrayList<FlipOpportunity>(out.subList(0, cfg.maxResults));
         }
         return out;
+    }
+
+    private static double robustReferencePrice(List<Models.BinAuction> sorted) {
+        int from = 1; // skip cheapest to reduce outlier impact
+        int to = Math.min(sorted.size(), 6); // next up to 5 comps
+        if (to - from <= 0) return 0.0;
+        List<Double> comps = new ArrayList<Double>();
+        for (int i = from; i < to; i++) comps.add(sorted.get(i).price);
+        Collections.sort(comps);
+        int n = comps.size();
+        if (n % 2 == 1) return comps.get(n / 2);
+        return (comps.get((n / 2) - 1) + comps.get(n / 2)) / 2.0;
     }
 }
