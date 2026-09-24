@@ -60,6 +60,8 @@ public class AutomationEngine implements FlipEngine.Listener {
     private String dailyCounterDay = "";
     private double dailySpend = 0.0;
     private double dailyEstimatedLoss = 0.0;
+    private double reservedSpend = 0.0;
+    private double reservedEstimatedLoss = 0.0;
 
     public AutomationEngine(LuminConfig config, FlipEngine flipEngine, SessionAnalytics analytics) {
         this.config = config;
@@ -105,9 +107,9 @@ public class AutomationEngine implements FlipEngine.Listener {
             if (count >= config.automationMaxOrdersPerScan) break;
             if (f.buyAt > config.automationMaxSpendPerOrder) continue;
             if (!passesItemFilters(f)) continue;
-            if (dailySpend + f.buyAt > config.automationMaxDailySpend) continue;
+            if (dailySpend + reservedSpend + f.buyAt > config.automationMaxDailySpend) continue;
             double estLoss = Math.max(0.0, f.buyAt - f.sellAt);
-            if (dailyEstimatedLoss + estLoss > config.automationMaxDailyLoss) continue;
+            if (dailyEstimatedLoss + reservedEstimatedLoss + estLoss > config.automationMaxDailyLoss) continue;
             if (config.automationPreventDuplicateOrders && isDuplicateFlip(f)) continue;
             pendingFlips.add(f);
             rememberPendingFlip(f);
@@ -166,7 +168,7 @@ public class AutomationEngine implements FlipEngine.Listener {
                     Math.max(0.0, next.buyAt),
                     latencyMs,
                     success,
-                    next.sellAt - next.buyAt,
+                    success ? (next.sellAt - next.buyAt) : 0.0,
                     success ? null : failureReason
             );
             long delay = clock.nextActionDelayMs(System.currentTimeMillis());
@@ -314,6 +316,8 @@ public class AutomationEngine implements FlipEngine.Listener {
         synchronized (this) {
             pendingOrderKeys.clear();
             recentOrderByKey.clear();
+            reservedSpend = 0.0;
+            reservedEstimatedLoss = 0.0;
         }
         if (scheduler != null) {
             scheduler.shutdownNow();
@@ -327,6 +331,8 @@ public class AutomationEngine implements FlipEngine.Listener {
             dailyCounterDay = day;
             dailySpend = 0.0;
             dailyEstimatedLoss = 0.0;
+            reservedSpend = 0.0;
+            reservedEstimatedLoss = 0.0;
         }
     }
 
@@ -365,10 +371,14 @@ public class AutomationEngine implements FlipEngine.Listener {
 
     private synchronized void rememberPendingFlip(FlipOpportunity f) {
         pendingOrderKeys.add(flipKey(f));
+        reservedSpend += Math.max(0.0, f.buyAt);
+        reservedEstimatedLoss += Math.max(0.0, f.buyAt - f.sellAt);
     }
 
     private synchronized void forgetPendingFlip(FlipOpportunity f) {
         pendingOrderKeys.remove(flipKey(f));
+        reservedSpend = Math.max(0.0, reservedSpend - Math.max(0.0, f.buyAt));
+        reservedEstimatedLoss = Math.max(0.0, reservedEstimatedLoss - Math.max(0.0, f.buyAt - f.sellAt));
     }
 
     private synchronized void rememberExecutedFlip(FlipOpportunity f) {

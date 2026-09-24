@@ -11,6 +11,9 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.zip.GZIPInputStream;
 
@@ -45,12 +48,6 @@ public class HypixelApi {
     }
 
     private JsonObject get(String urlStr) throws IOException {
-        long now = System.currentTimeMillis();
-        if (now < cooldownUntilMs) {
-            long waitMs = cooldownUntilMs - now;
-            throw new IOException("Hypixel API cooldown active for " + waitMs + "ms");
-        }
-
         IOException last = null;
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             try {
@@ -59,6 +56,8 @@ public class HypixelApi {
                     sleep(cooldownUntilMs - inLoopNow);
                 }
                 return getOnce(urlStr);
+            } catch (RateLimitedException e) {
+                throw new IOException(e.getMessage(), e);
             } catch (IOException e) {
                 last = e;
                 long backoff = jitteredBackoffMs(attempt);
@@ -122,7 +121,7 @@ public class HypixelApi {
                 long retryAfterMs = parseRetryAfterMs(conn);
                 cooldownUntilMs = System.currentTimeMillis() + retryAfterMs;
                 Debug.log(Debug.Category.ERROR, "Rate limited (429). Cooling down for " + retryAfterMs + "ms");
-                throw new IOException("Rate limited (429)");
+                throw new RateLimitedException("Rate limited (429)");
             }
             if (code >= 500) {
                 throw new IOException("HTTP " + code + " server error");
@@ -153,6 +152,12 @@ public class HypixelApi {
                 return Math.max(1_000L, sec * 1_000L);
             } catch (NumberFormatException ignored) {
             }
+            try {
+                ZonedDateTime when = ZonedDateTime.parse(retryAfter.trim(), DateTimeFormatter.RFC_1123_DATE_TIME);
+                long delta = when.toInstant().toEpochMilli() - System.currentTimeMillis();
+                return Math.max(1_000L, delta);
+            } catch (DateTimeParseException ignored) {
+            }
         }
         return 10_000L;
     }
@@ -168,6 +173,12 @@ public class HypixelApi {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Interrupted while waiting for retry", e);
+        }
+    }
+
+    private static final class RateLimitedException extends IOException {
+        private RateLimitedException(String message) {
+            super(message);
         }
     }
 }

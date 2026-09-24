@@ -11,6 +11,7 @@ import net.minecraft.text.Text;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Modern, clean flips screen.
@@ -88,7 +89,10 @@ public class FlipsScreen extends Screen {
             page = Math.max(0, page - 1);
         }).dimensions(cx - 40, btnY - 24, 20, 20).build());
         this.addDrawableChild(ButtonWidget.builder(Text.literal(">"), b -> {
-            page++;
+            int pageCount = pageCount();
+            if (page < pageCount - 1) {
+                page++;
+            }
         }).dimensions(cx + 20, btnY - 24, 20, 20).build());
 
         this.addDrawableChild(ButtonWidget.builder(Text.literal("Hint"), b -> {
@@ -96,7 +100,7 @@ public class FlipsScreen extends Screen {
             if (mc.player != null) {
                 mc.player.sendMessage(Text.literal("[Lumin] Use .lumin top or /lumin top for a chat summary."), false);
             }
-        }).dimensions(cx - 10, btnY - 24, 20, 20).build());
+        }).dimensions(cx - 30, btnY - 24, 60, 20).build());
     }
 
     @Override
@@ -201,7 +205,7 @@ public class FlipsScreen extends Screen {
                 out.sort(Comparator.comparingDouble((FlipOpportunity f) -> f.profitPercent).reversed());
                 break;
             case NAME:
-                out.sort(Comparator.comparing(f -> f.display.toLowerCase()));
+                out.sort(Comparator.comparing(f -> f.display.toLowerCase(Locale.ROOT)));
                 break;
             case TOTAL_PROFIT:
             default:
@@ -209,5 +213,15 @@ public class FlipsScreen extends Screen {
                 break;
         }
         return out;
+    }
+
+    private int pageCount() {
+        int panelH = this.height - 80;
+        int rowStart = 40 + 38 + 18;
+        int y1 = 40 + panelH;
+        int maxRowsByHeight = Math.min(ROWS_PER_PAGE, (y1 - rowStart - 10) / 16);
+        maxRowsByHeight = Math.max(1, maxRowsByHeight);
+        int size = transformFlips(flipEngine.getLatestFlips()).size();
+        return Math.max(1, (int) Math.ceil((double) size / (double) maxRowsByHeight));
     }
 }

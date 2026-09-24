@@ -120,6 +120,9 @@ public final class CommandActions {
     }
 
     public static List<String> stats(SessionAnalytics analytics) {
+        if (analytics == null) {
+            return lines("[Lumin] Stats unavailable.");
+        }
         SessionAnalytics.Summary s = analytics.getSummary();
         return lines(
                 "[Lumin] Session stats:",

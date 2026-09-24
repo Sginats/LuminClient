@@ -32,7 +32,13 @@ public class SessionAnalytics {
     private String day = utcDay();
 
     public SessionAnalytics() {
-        this.file = FabricLoader.getInstance().getConfigDir().resolve("luminclient-stats.json").toFile();
+        File f;
+        try {
+            f = FabricLoader.getInstance().getConfigDir().resolve("luminclient-stats.json").toFile();
+        } catch (Throwable t) {
+            f = new File("build/tmp/luminclient-stats.json");
+        }
+        this.file = f;
         load();
     }
 
@@ -80,6 +86,10 @@ public class SessionAnalytics {
         }
         try (FileReader reader = new FileReader(file)) {
             JsonObject o = JsonParser.parseReader(reader).getAsJsonObject();
+            int version = o.has("version") ? o.get("version").getAsInt() : 0;
+            if (version > VERSION) {
+                LuminClient.LOGGER.warn("Stats file version {} is newer than supported version {}", version, VERSION);
+            }
             attempted = o.has("attempted") ? o.get("attempted").getAsLong() : 0L;
             succeeded = o.has("succeeded") ? o.get("succeeded").getAsLong() : 0L;
             failed = o.has("failed") ? o.get("failed").getAsLong() : 0L;

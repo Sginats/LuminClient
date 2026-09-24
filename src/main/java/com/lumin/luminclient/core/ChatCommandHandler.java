@@ -22,6 +22,7 @@ import java.util.Locale;
 public final class ChatCommandHandler {
 
     private static Context ctx;
+    private static boolean registered = false;
 
     public static final class Context {
         public final LuminConfig config;
@@ -47,8 +48,10 @@ public final class ChatCommandHandler {
                                 AutomationEngine auto,
                                 SessionAnalytics analytics) {
         ctx = new Context(cfg, fe, gm, auto, analytics);
-
-        ClientSendMessageEvents.CHAT.register(ChatCommandHandler::onChat);
+        if (!registered) {
+            ClientSendMessageEvents.CHAT.register(ChatCommandHandler::onChat);
+            registered = true;
+        }
     }
 
     private static void onChat(String message) {
