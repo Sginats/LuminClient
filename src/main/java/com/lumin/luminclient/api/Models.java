@@ -1,86 +1,110 @@
 package com.lumin.luminclient.api;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.lumin.luminclient.market.BazaarProduct;
+import com.lumin.luminclient.market.BazaarSnapshot;
+import com.lumin.luminclient.market.OrderBook;
+import com.lumin.luminclient.market.OrderLevel;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
-/**
- * Lightweight models for Hypixel SkyBlock market data.
- */
+/** JSON-to-domain parsing for public Hypixel market responses. */
 public final class Models {
 
-    private Models() {}
-
-    /** A single bazaar product with its top-of-book orders. */
-    public static final class BazaarProduct {
-        public final String productId;
-        public double bestBuyPrice;   // highest buy order (what a seller gets instantly)
-        public double bestSellPrice;  // lowest sell offer (what a buyer pays instantly)
-        public long buyVolume;
-        public long sellVolume;
-
-        public BazaarProduct(String productId) {
-            this.productId = productId;
-        }
-
-        /** Margin % if you buy at bestSellPrice and sell at bestBuyPrice. */
-        public double marginPercent() {
-            if (bestSellPrice <= 0) return 0;
-            return (bestBuyPrice - bestSellPrice) / bestSellPrice * 100.0;
-        }
+    private Models() {
     }
 
-    /** Snapshot of the whole bazaar. */
-    public static final class BazaarSnapshot {
-        public final long lastUpdated;
-        public final Map<String, BazaarProduct> products;
-
-        public BazaarSnapshot(long lastUpdated, Map<String, BazaarProduct> products) {
-            this.lastUpdated = lastUpdated;
-            this.products = products;
-        }
+    /** A BIN auction row. Prices are stored as whole coins. */
+    public record BinAuction(String uuid, String itemName, String itemId, long price, long end) {
     }
 
-    /** A BIN (buy-it-now) auction row. */
-    public static final class BinAuction {
-        public final String uuid;
-        public final String itemName;
-        public final String itemId;
-        public final double price;
-        public final long end;
-
-        public BinAuction(String uuid, String itemName, String itemId, double price, long end) {
-            this.uuid = uuid;
-            this.itemName = itemName;
-            this.itemId = itemId;
-            this.price = price;
-            this.end = end;
-        }
-    }
-
-    /** Parsed /v2/skyblock/bazaar response. */
+    /** Parses Bazaar summaries into executable order levels, retaining quick-status values only as references. */
     public static BazaarSnapshot parseBazaar(JsonObject root) {
-        long lastUpdated = root.has("lastUpdated") ? root.get("lastUpdated").getAsLong() : 0L;
+        long updatedEpochMillis = longValue(root, "lastUpdated");
+        Instant lastUpdated = updatedEpochMillis > 0 ? Instant.ofEpochMilli(updatedEpochMillis) : Instant.EPOCH;
         Map<String, BazaarProduct> products = new HashMap<String, BazaarProduct>();
+        if (root == null || !root.has("products") || !root.get("products").isJsonObject()) {
+            return new BazaarSnapshot(lastUpdated, products);
+        }
 
-        if (root.has("products") && root.get("products").isJsonObject()) {
-            JsonObject prods = root.getAsJsonObject("products");
-            for (Map.Entry<String, com.google.gson.JsonElement> e : prods.entrySet()) {
-                String id = e.getKey();
-                JsonObject p = e.getValue().getAsJsonObject();
-                BazaarProduct bp = new BazaarProduct(id);
-
-                if (p.has("quick_status") && p.get("quick_status").isJsonObject()) {
-                    JsonObject qs = p.getAsJsonObject("quick_status");
-                    bp.bestBuyPrice  = qs.has("buyPrice")  ? qs.get("buyPrice").getAsDouble()  : 0;
-                    bp.bestSellPrice = qs.has("sellPrice") ? qs.get("sellPrice").getAsDouble() : 0;
-                    bp.buyVolume     = qs.has("buyVolume")  ? qs.get("buyVolume").getAsLong()  : 0;
-                    bp.sellVolume    = qs.has("sellVolume") ? qs.get("sellVolume").getAsLong() : 0;
-                }
-                products.put(id, bp);
+        for (Map.Entry<String, JsonElement> entry : root.getAsJsonObject("products").entrySet()) {
+            if (!entry.getValue().isJsonObject()) {
+                continue;
             }
+            JsonObject product = entry.getValue().getAsJsonObject();
+            JsonObject quickStatus = objectValue(product, "quick_status");
+            products.put(entry.getKey(), new BazaarProduct(
+                    entry.getKey(),
+                    new OrderBook(parseLevels(product, "buy_summary"), parseLevels(product, "sell_summary")),
+                    priceValue(quickStatus, "buyPrice"),
+                    priceValue(quickStatus, "sellPrice"),
+                    nonNegative(longValue(quickStatus, "buyVolume")),
+                    nonNegative(longValue(quickStatus, "sellVolume"))
+            ));
         }
         return new BazaarSnapshot(lastUpdated, products);
+    }
+
+    private static List<OrderLevel> parseLevels(JsonObject product, String member) {
+        List<OrderLevel> levels = new ArrayList<OrderLevel>();
+        if (!product.has(member) || !product.get(member).isJsonArray()) {
+            return levels;
+        }
+        JsonArray summary = product.getAsJsonArray(member);
+        for (JsonElement element : summary) {
+            if (!element.isJsonObject()) {
+                continue;
+            }
+            JsonObject row = element.getAsJsonObject();
+            long price = priceValue(row, "pricePerUnit");
+            long quantity = nonNegative(longValue(row, "amount"));
+            if (price > 0 && quantity > 0) {
+                levels.add(new OrderLevel(price, quantity));
+            }
+        }
+        return levels;
+    }
+
+    private static JsonObject objectValue(JsonObject object, String member) {
+        return object != null && object.has(member) && object.get(member).isJsonObject()
+                ? object.getAsJsonObject(member) : new JsonObject();
+    }
+
+    private static long priceValue(JsonObject object, String member) {
+        if (object == null || !object.has(member) || !object.get(member).isJsonPrimitive()) {
+            return 0L;
+        }
+        try {
+            BigDecimal value = object.get(member).getAsBigDecimal();
+            if (value.signum() <= 0) {
+                return 0L;
+            }
+            return value.setScale(0, RoundingMode.HALF_UP).longValueExact();
+        } catch (ArithmeticException | NumberFormatException ignored) {
+            return 0L;
+        }
+    }
+
+    private static long longValue(JsonObject object, String member) {
+        if (object == null || !object.has(member) || !object.get(member).isJsonPrimitive()) {
+            return 0L;
+        }
+        try {
+            return object.get(member).getAsLong();
+        } catch (NumberFormatException ignored) {
+            return 0L;
+        }
+    }
+
+    private static long nonNegative(long value) {
+        return Math.max(0L, value);
     }
 }

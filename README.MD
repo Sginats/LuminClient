@@ -16,7 +16,7 @@ The "humanization" features (variable delays, thinking pauses, session breaks, f
 
 ## Features
 
-- **Bazaar margin flips**: scans `/v2/skyblock/bazaar` and finds items where the spread between best sell and best buy is profitable after tax.
+- **Bazaar margin flips**: scans `/v2/skyblock/bazaar` and evaluates quantity-aware executable order-book depth. Results include liquidation fees and slippage, so a displayed margin is net-profitable rather than merely a pre-cost spread.
 - **BIN snipe flips**: scans live auctions for underpriced Buy-It-Now listings.
 - **In-game GUI** (`.lumin gui` or keybind `K`) showing the top flips.
 - **HUD overlay** showing how many flips are available.
@@ -154,9 +154,13 @@ This is the first thing to enable if flips aren't showing up, automation isn't c
 Hypixel's bazaar has a **buy side** (people placing buy orders) and a **sell side** (people placing sell offers). If the best sell offer is higher than the best buy order, the difference is the margin. The mod computes:
 
 ```
-net_profit = (best_buy - best_sell) - 1% bazaar tax
-margin_%   = net_profit / best_sell
+acquisition_cost = weighted executable sell levels
+liquidation_proceeds = weighted executable buy levels
+net_profit = liquidation_proceeds - acquisition_cost - rounded_up_1%_liquidation_fee
+margin_% = net_profit / acquisition_cost
 ```
+
+`quick_status.buyPrice` and `quick_status.sellPrice` are retained only as API reference values; executable pricing comes from `buy_summary` and `sell_summary`. Bazaar candidates require fresh data, sufficient depth, and positive net profit after fees.
 
 and surfaces items above your thresholds.
 

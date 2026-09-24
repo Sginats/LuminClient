@@ -40,7 +40,7 @@ HypixelApi ──► Models ──► Flip strategies
 
 ### Market scanning
 
-`FlipEngine` owns a single daemon scheduled executor. It periodically calls `HypixelApi`, parses JSON through `Models`, runs enabled strategies, replaces the latest immutable snapshot, and notifies listeners. API failures are logged and do not replace the last successful snapshot.
+`FlipEngine` owns a single daemon scheduled executor. It periodically calls `HypixelApi`, parses JSON through `Models` into immutable `market` records, runs enabled strategies, replaces the latest immutable snapshot, and notifies listeners. API failures are logged and do not replace the last successful snapshot.
 
 `HypixelApi` is the only HTTP boundary. Keep retries, `Retry-After`, backoff, timeouts, response validation, and API-key header behavior there. Strategies should receive parsed domain data or an API abstraction, not open connections themselves.
 
@@ -48,7 +48,7 @@ HypixelApi ──► Models ──► Flip strategies
 
 Both strategies produce `FlipOpportunity`:
 
-- `BazaarMarginStrategy` evaluates bazaar buy/sell order prices, tax, minimum margin/profit, budget, and liquidity.
+- `BazaarMarginStrategy` evaluates executable Bazaar `buy_summary`/`sell_summary` levels with weighted acquisition/liquidation prices, a 1% rounded-up liquidation fee, slippage, freshness, minimum margin/profit, budget, and liquidity. `quick_status` prices are references, not executable bids or asks.
 - `BinSnipeStrategy` evaluates live BIN auctions against a robust reference price and configured percentage threshold.
 
 The GUI and automation layers consume the common opportunity type. A new strategy should not add strategy-specific branches outside the flip package unless execution genuinely differs.
@@ -130,4 +130,3 @@ Errors should be logged even when verbose debug mode is off. Avoid broad catches
 6. Update `README.MD` when user-visible commands, configuration, installation, or safety behavior changes.
 
 There are no tests that safely exercise a live Minecraft GUI or Hypixel network. Those paths require manual client testing and careful logging; do not make network calls from unit tests.
-

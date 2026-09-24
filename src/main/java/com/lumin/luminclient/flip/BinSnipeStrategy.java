@@ -47,7 +47,7 @@ public final class BinSnipeStrategy {
                 if (itemId == null) continue;
                 String uuid = a.has("uuid") ? a.get("uuid").getAsString() : "";
                 String name = a.has("item_name") ? a.get("item_name").getAsString() : itemId;
-                double price = a.has("starting_bid") ? a.get("starting_bid").getAsDouble() : 0;
+                long price = a.has("starting_bid") ? a.get("starting_bid").getAsLong() : 0L;
                 long end = a.has("end") ? a.get("end").getAsLong() : 0L;
                 if (price <= 0) continue;
                 if (end > 0 && end - now < 30_000L) continue; // too close to expiry
@@ -62,24 +62,24 @@ public final class BinSnipeStrategy {
             List<Models.BinAuction> list = e.getValue();
             if (list.size() < 4) continue;
 
-            Collections.sort(list, Comparator.comparingDouble(b -> b.price));
-            double lowest = list.get(0).price;
-            double secondLowest = list.size() > 1 ? list.get(1).price : lowest;
-            double reference = robustReferencePrice(list);
+            Collections.sort(list, Comparator.comparingLong(Models.BinAuction::price));
+            long lowest = list.get(0).price();
+            long secondLowest = list.size() > 1 ? list.get(1).price() : lowest;
+            long reference = robustReferencePrice(list);
 
             // If the cheapest is much cheaper than the next one, it's a snipe candidate
             if (secondLowest <= 0 || reference <= 0) continue;
-            double gapPct = (reference - lowest) / reference * 100.0;
+            double gapPct = (double) (reference - lowest) / reference * 100.0;
             if (gapPct < cfg.minBinFlipPercent) continue;
 
             Models.BinAuction target = list.get(0);
-            double profit = reference - lowest;
+            long profit = reference - lowest;
             if (profit < cfg.minProfitPerFlip) continue;
 
             out.add(new FlipOpportunity(
                     FlipOpportunity.Type.BIN_SNIPE,
-                    target.itemName,
-                    target.itemId,
+                    target.itemName(),
+                    target.itemId(),
                     lowest, secondLowest, profit, gapPct, 1, list.size()));
         }
 
@@ -90,15 +90,15 @@ public final class BinSnipeStrategy {
         return out;
     }
 
-    private static double robustReferencePrice(List<Models.BinAuction> sorted) {
+    private static long robustReferencePrice(List<Models.BinAuction> sorted) {
         int from = 1; // skip cheapest to reduce outlier impact
         int to = Math.min(sorted.size(), 6); // next up to 5 comps
-        if (to - from <= 0) return 0.0;
-        List<Double> comps = new ArrayList<Double>();
-        for (int i = from; i < to; i++) comps.add(sorted.get(i).price);
+        if (to - from <= 0) return 0L;
+        List<Long> comps = new ArrayList<Long>();
+        for (int i = from; i < to; i++) comps.add(sorted.get(i).price());
         Collections.sort(comps);
         int n = comps.size();
         if (n % 2 == 1) return comps.get(n / 2);
-        return (comps.get((n / 2) - 1) + comps.get(n / 2)) / 2.0;
+        return (comps.get((n / 2) - 1) + comps.get(n / 2)) / 2L;
     }
 }

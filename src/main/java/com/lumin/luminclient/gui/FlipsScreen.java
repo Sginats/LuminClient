@@ -178,10 +178,10 @@ public class FlipsScreen extends Screen {
         super.render(context, mouseX, mouseY, delta);
     }
 
-    private static String formatCoins(double v) {
+    private static String formatCoins(long v) {
         if (v >= 1_000_000) return String.format("%.1fM", v / 1_000_000.0);
         if (v >= 1_000)     return String.format("%.1fk", v / 1_000.0);
-        return String.format("%.0f", v);
+        return Long.toString(v);
     }
 
     private List<FlipOpportunity> transformFlips(List<FlipOpportunity> in) {

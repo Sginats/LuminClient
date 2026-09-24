@@ -3,6 +3,7 @@ package com.lumin.luminclient.flip;
 import com.lumin.luminclient.LuminClient;
 import com.lumin.luminclient.api.HypixelApi;
 import com.lumin.luminclient.api.Models;
+import com.lumin.luminclient.market.BazaarSnapshot;
 import com.lumin.luminclient.config.LuminConfig;
 import com.lumin.luminclient.core.Debug;
 
@@ -82,8 +83,8 @@ public class FlipEngine {
             List<FlipOpportunity> flips = new ArrayList<FlipOpportunity>();
 
             if (config.enableBazaarMarginFlips) {
-                Models.BazaarSnapshot snapshot = Models.parseBazaar(api.getBazaar());
-                Debug.log(Debug.Category.SCAN, "Bazaar snapshot: " + snapshot.products.size() + " products");
+                BazaarSnapshot snapshot = Models.parseBazaar(api.getBazaar());
+                Debug.log(Debug.Category.SCAN, "Bazaar snapshot: " + snapshot.products().size() + " products");
                 List<FlipOpportunity> bz = bazaarStrategy.findFlips(snapshot, config);
                 Debug.log(Debug.Category.SCAN, "Bazaar margin flips found: " + bz.size());
                 flips.addAll(bz);

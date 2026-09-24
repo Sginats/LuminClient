@@ -105,7 +105,7 @@ public class AutomationEngine implements FlipEngine.Listener {
         int count = 0;
         for (FlipOpportunity f : flips) {
             if (count >= config.automationMaxOrdersPerScan) break;
-            if (f.buyAt > config.automationMaxSpendPerOrder) continue;
+            if (acquisitionCost(f) > config.automationMaxSpendPerOrder) continue;
             if (!passesItemFilters(f)) continue;
             if (!tryReservePendingFlip(f)) continue;
             pendingFlips.add(f);
@@ -146,8 +146,8 @@ public class AutomationEngine implements FlipEngine.Listener {
         try {
             success = executeFlip(next);
             if (success) {
-                dailySpend += Math.max(0.0, next.buyAt);
-                dailyEstimatedLoss += Math.max(0.0, next.buyAt - next.sellAt);
+                dailySpend += acquisitionCost(next);
+                dailyEstimatedLoss += Math.max(0.0, -netProfit(next));
                 rememberExecutedFlip(next);
             } else {
                 failureReason = "not-executed";
@@ -161,10 +161,10 @@ public class AutomationEngine implements FlipEngine.Listener {
         } finally {
             long latencyMs = (System.nanoTime() - start) / 1_000_000L;
             analytics.recordAttempt(
-                    Math.max(0.0, next.buyAt),
+                    acquisitionCost(next),
                     latencyMs,
                     success,
-                    success ? (next.sellAt - next.buyAt) : 0.0,
+                    success ? netProfit(next) : 0.0,
                     success ? null : failureReason
             );
             long delay = clock.nextActionDelayMs(System.currentTimeMillis());
@@ -366,8 +366,8 @@ public class AutomationEngine implements FlipEngine.Listener {
     }
 
     private synchronized boolean tryReservePendingFlip(FlipOpportunity f) {
-        double spend = Math.max(0.0, f.buyAt);
-        double estLoss = Math.max(0.0, f.buyAt - f.sellAt);
+        double spend = acquisitionCost(f);
+        double estLoss = Math.max(0.0, -netProfit(f));
         if (dailySpend + reservedSpend + spend > config.automationMaxDailySpend) return false;
         if (dailyEstimatedLoss + reservedEstimatedLoss + estLoss > config.automationMaxDailyLoss) return false;
         if (config.automationPreventDuplicateOrders && isDuplicateFlip(f)) return false;
@@ -379,8 +379,8 @@ public class AutomationEngine implements FlipEngine.Listener {
 
     private synchronized void forgetPendingFlip(FlipOpportunity f) {
         pendingOrderKeys.remove(flipKey(f));
-        reservedSpend = Math.max(0.0, reservedSpend - Math.max(0.0, f.buyAt));
-        reservedEstimatedLoss = Math.max(0.0, reservedEstimatedLoss - Math.max(0.0, f.buyAt - f.sellAt));
+        reservedSpend = Math.max(0.0, reservedSpend - acquisitionCost(f));
+        reservedEstimatedLoss = Math.max(0.0, reservedEstimatedLoss - Math.max(0.0, -netProfit(f)));
     }
 
     private synchronized void rememberExecutedFlip(FlipOpportunity f) {
@@ -395,6 +395,16 @@ public class AutomationEngine implements FlipEngine.Listener {
     private String flipKey(FlipOpportunity f) {
         String base = (f.productId == null || f.productId.isEmpty()) ? f.display : f.productId;
         return normalizeId(base) + "|" + f.type;
+    }
+
+    private static long acquisitionCost(FlipOpportunity flip) {
+        return flip.marketOpportunity == null ? Math.max(0L, flip.buyAt)
+                : flip.marketOpportunity.metrics().acquisitionCost();
+    }
+
+    private static long netProfit(FlipOpportunity flip) {
+        return flip.marketOpportunity == null ? flip.sellAt - flip.buyAt
+                : flip.marketOpportunity.metrics().netProfit();
     }
 
     private static String normalizeId(String s) {
