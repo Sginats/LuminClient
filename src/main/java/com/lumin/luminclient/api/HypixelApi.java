@@ -87,6 +87,12 @@ public class HypixelApi {
             }
 
             int code = conn.getResponseCode();
+            if (code == 429) {
+                long retryAfterMs = parseRetryAfterMs(conn);
+                cooldownUntilMs = System.currentTimeMillis() + retryAfterMs;
+                Debug.log(Debug.Category.ERROR, "Rate limited (429). Cooling down for " + retryAfterMs + "ms");
+                throw new RateLimitedException("Rate limited (429)");
+            }
             InputStream raw = code >= 200 && code < 300
                     ? conn.getInputStream()
                     : conn.getErrorStream();
@@ -116,12 +122,6 @@ public class HypixelApi {
             if (json == null) {
                 Debug.log(Debug.Category.ERROR, "Empty/invalid JSON (HTTP " + code + ") from " + urlStr);
                 throw new IOException("Empty/invalid JSON (HTTP " + code + ")");
-            }
-            if (code == 429) {
-                long retryAfterMs = parseRetryAfterMs(conn);
-                cooldownUntilMs = System.currentTimeMillis() + retryAfterMs;
-                Debug.log(Debug.Category.ERROR, "Rate limited (429). Cooling down for " + retryAfterMs + "ms");
-                throw new RateLimitedException("Rate limited (429)");
             }
             if (code >= 500) {
                 throw new IOException("HTTP " + code + " server error");

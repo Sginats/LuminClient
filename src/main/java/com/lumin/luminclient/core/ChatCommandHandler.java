@@ -47,10 +47,12 @@ public final class ChatCommandHandler {
                                 GuiManager gm,
                                 AutomationEngine auto,
                                 SessionAnalytics analytics) {
-        ctx = new Context(cfg, fe, gm, auto, analytics);
-        if (!registered) {
-            ClientSendMessageEvents.CHAT.register(ChatCommandHandler::onChat);
-            registered = true;
+        synchronized (ChatCommandHandler.class) {
+            ctx = new Context(cfg, fe, gm, auto, analytics);
+            if (!registered) {
+                ClientSendMessageEvents.CHAT.register(ChatCommandHandler::onChat);
+                registered = true;
+            }
         }
     }
 

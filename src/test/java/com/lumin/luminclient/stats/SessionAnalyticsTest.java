@@ -44,4 +44,18 @@ class SessionAnalyticsTest {
         assertEquals(0, summary.succeeded);
         assertEquals(0, summary.failed);
     }
+
+    @Test
+    void summaryReloadsFromPersistedFile() {
+        resetStatsFile();
+        SessionAnalytics first = new SessionAnalytics();
+        first.recordAttempt(300.0, 80, false, 0.0, "x");
+
+        SessionAnalytics second = new SessionAnalytics();
+        SessionAnalytics.Summary summary = second.getSummary();
+        assertEquals(1, summary.attempted);
+        assertEquals(0, summary.succeeded);
+        assertEquals(1, summary.failed);
+        assertEquals(300.0, summary.totalSpend);
+    }
 }

@@ -107,12 +107,8 @@ public class AutomationEngine implements FlipEngine.Listener {
             if (count >= config.automationMaxOrdersPerScan) break;
             if (f.buyAt > config.automationMaxSpendPerOrder) continue;
             if (!passesItemFilters(f)) continue;
-            if (dailySpend + reservedSpend + f.buyAt > config.automationMaxDailySpend) continue;
-            double estLoss = Math.max(0.0, f.buyAt - f.sellAt);
-            if (dailyEstimatedLoss + reservedEstimatedLoss + estLoss > config.automationMaxDailyLoss) continue;
-            if (config.automationPreventDuplicateOrders && isDuplicateFlip(f)) continue;
+            if (!tryReservePendingFlip(f)) continue;
             pendingFlips.add(f);
-            rememberPendingFlip(f);
             count++;
         }
     }
@@ -369,10 +365,16 @@ public class AutomationEngine implements FlipEngine.Listener {
         return last != null && (System.currentTimeMillis() - last) < TimeUnit.MINUTES.toMillis(10);
     }
 
-    private synchronized void rememberPendingFlip(FlipOpportunity f) {
+    private synchronized boolean tryReservePendingFlip(FlipOpportunity f) {
+        double spend = Math.max(0.0, f.buyAt);
+        double estLoss = Math.max(0.0, f.buyAt - f.sellAt);
+        if (dailySpend + reservedSpend + spend > config.automationMaxDailySpend) return false;
+        if (dailyEstimatedLoss + reservedEstimatedLoss + estLoss > config.automationMaxDailyLoss) return false;
+        if (config.automationPreventDuplicateOrders && isDuplicateFlip(f)) return false;
         pendingOrderKeys.add(flipKey(f));
-        reservedSpend += Math.max(0.0, f.buyAt);
-        reservedEstimatedLoss += Math.max(0.0, f.buyAt - f.sellAt);
+        reservedSpend += spend;
+        reservedEstimatedLoss += estLoss;
+        return true;
     }
 
     private synchronized void forgetPendingFlip(FlipOpportunity f) {
