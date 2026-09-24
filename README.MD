@@ -192,6 +192,11 @@ src/main/java/com.lumin.luminclient/
     └── HumanClock.java       # human-behavior timing model
 ```
 
+Additional maintainer documentation is available in:
+
+- [`docs/PROJECT_STRUCTURE.md`](docs/PROJECT_STRUCTURE.md) — repository tree, ownership map, build/test commands, and generated files.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — runtime lifecycle, data flow, threading, automation safety, and extension guidance.
+
 ---
 
 ## Limitations & TODO
